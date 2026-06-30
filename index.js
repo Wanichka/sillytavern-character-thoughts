@@ -1,9 +1,9 @@
-// Character Thoughts v0.4
+// Character Thoughts v0.5
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// v0.4: fixed block extraction (tags were eaten by stripHtml -> empty panel);
-// panel is draggable by its header (the button stays fixed); profiles can be
-// created and deleted, with duplicate-name protection.
+// v0.5: per-character avatar upload with a square drag/zoom cropper; the image
+// is downscaled to 256px and stored in the profile (data URL). Filename-in-folder
+// remains as a fallback. Panel draggable; profiles create/delete; tag-extraction fix.
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
@@ -181,6 +181,7 @@ function ensureProfile(profileId, displayName) {
             name: displayName || profileId,
             folder: slugify(displayName || profileId),
             avatars: {},
+            uploads: {},
         };
         saveProfiles(profiles);
     }
@@ -345,20 +346,210 @@ function getLastAssistantMessageText() {
 
 /* --------------------------------- avatars --------------------------------- */
 
-function resolveAvatarUrl(name) {
-    const profile = getActiveProfile();
-    const file = profile?.avatars?.[name];
-    if (!file) return null;
+/* ----------------------------- avatar upload -------------------------------- */
 
-    const folder = encodeURIComponent(profile.folder || 'default');
-    const encodedFile = encodeURIComponent(file);
+// Store/clear an uploaded avatar (a data URL) for a character in the active
+// profile. Returns false if the browser refused to save (storage full).
+function setUploadedAvatar(name, dataUrl) {
+    const profiles = getProfiles();
+    const id = getActiveProfileId();
+    if (!profiles[id]) return false;
+
+    profiles[id].uploads = profiles[id].uploads || {};
+    if (dataUrl) {
+        profiles[id].uploads[name] = dataUrl;
+    } else {
+        delete profiles[id].uploads[name];
+    }
 
     try {
-        return new URL(`avatars/${folder}/${encodedFile}`, import.meta.url).href;
+        localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+        return true;
     } catch (error) {
-        console.error('[Character Thoughts] Failed to build avatar URL:', error);
-        return null;
+        console.error('[Character Thoughts] Failed to save avatar (storage full?):', error);
+        return false;
     }
+}
+
+// Open a native file picker for one image, then hand the File to a callback.
+function pickImageFile(onPicked) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.style.display = 'none';
+    input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (file) onPicked(file);
+        input.remove();
+    });
+    document.body.appendChild(input);
+    input.click();
+}
+
+// Square cropper: drag to pan, slider to zoom. Saves a downscaled JPEG data URL.
+function openImageCropper(file, onSave) {
+    const reader = new FileReader();
+    reader.onerror = () => alert('Could not read that image file.');
+    reader.onload = () => buildCropper(reader.result, onSave);
+    reader.readAsDataURL(file);
+}
+
+function buildCropper(dataUrl, onSave) {
+    const WIN = Math.min(260, Math.max(180, window.innerWidth - 80)); // on-screen crop square
+    const OUT = 256;   // saved avatar resolution
+    const MAX_ZOOM = 4;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'ct-crop-overlay';
+    overlay.innerHTML = `
+        <div class="ct-crop-box">
+            <div class="ct-crop-title">Adjust avatar</div>
+            <div class="ct-crop-window" style="width:${WIN}px;height:${WIN}px">
+                <img class="ct-crop-img" alt="" draggable="false">
+            </div>
+            <input class="ct-crop-zoom" type="range" min="1" max="${MAX_ZOOM}" step="0.01" value="1">
+            <div class="ct-crop-actions">
+                <button class="ct-crop-cancel" type="button">Cancel</button>
+                <button class="ct-crop-save" type="button">Save</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const img = overlay.querySelector('.ct-crop-img');
+    const win = overlay.querySelector('.ct-crop-window');
+    const zoom = overlay.querySelector('.ct-crop-zoom');
+
+    win.style.touchAction = 'none';
+
+    let nw = 0;
+    let nh = 0;
+    let cover = 1;  // scale at which the image just covers the window
+    let k = 1;      // current scale
+    let tx = 0;
+    let ty = 0;
+
+    function clampPan() {
+        const dispW = nw * k;
+        const dispH = nh * k;
+        tx = Math.min(0, Math.max(WIN - dispW, tx));
+        ty = Math.min(0, Math.max(WIN - dispH, ty));
+    }
+    function apply() {
+        img.style.width = `${nw * k}px`;
+        img.style.height = `${nh * k}px`;
+        img.style.left = `${tx}px`;
+        img.style.top = `${ty}px`;
+    }
+
+    img.onload = () => {
+        nw = img.naturalWidth;
+        nh = img.naturalHeight;
+        cover = Math.max(WIN / nw, WIN / nh);
+        k = cover;
+        tx = (WIN - nw * k) / 2;
+        ty = (WIN - nh * k) / 2;
+        apply();
+    };
+    img.onerror = () => { alert('Could not load that image.'); overlay.remove(); };
+    img.src = dataUrl;
+
+    zoom.addEventListener('input', () => {
+        const newK = cover * parseFloat(zoom.value);
+        const cx = WIN / 2;
+        const cy = WIN / 2;
+        // keep the window centre anchored to the same source point while zooming
+        const srcX = (cx - tx) / k;
+        const srcY = (cy - ty) / k;
+        k = newK;
+        tx = cx - srcX * k;
+        ty = cy - srcY * k;
+        clampPan();
+        apply();
+    });
+
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let baseTx = 0;
+    let baseTy = 0;
+
+    win.addEventListener('pointerdown', (event) => {
+        dragging = true;
+        startX = event.clientX;
+        startY = event.clientY;
+        baseTx = tx;
+        baseTy = ty;
+        try { win.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+    });
+    win.addEventListener('pointermove', (event) => {
+        if (!dragging) return;
+        tx = baseTx + (event.clientX - startX);
+        ty = baseTy + (event.clientY - startY);
+        clampPan();
+        apply();
+    });
+    function endDrag(event) {
+        dragging = false;
+        try { win.releasePointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+    }
+    win.addEventListener('pointerup', endDrag);
+    win.addEventListener('pointercancel', endDrag);
+
+    function close() { overlay.remove(); }
+
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) close();
+    });
+    overlay.querySelector('.ct-crop-cancel').addEventListener('click', close);
+
+    overlay.querySelector('.ct-crop-save').addEventListener('click', () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = OUT;
+        canvas.height = OUT;
+        const ctx = canvas.getContext('2d');
+
+        // Map the visible window back to source (natural) pixels.
+        const srcSize = WIN / k;
+        const srcX = -tx / k;
+        const srcY = -ty / k;
+
+        let out;
+        try {
+            ctx.drawImage(img, srcX, srcY, srcSize, srcSize, 0, 0, OUT, OUT);
+            out = canvas.toDataURL('image/jpeg', 0.85);
+        } catch (error) {
+            console.error('[Character Thoughts] Crop failed:', error);
+            alert('Could not process that image.');
+            return;
+        }
+        close();
+        onSave(out);
+    });
+}
+
+function resolveAvatarSrc(name) {
+    const profile = getActiveProfile();
+
+    // 1) An image uploaded through the menu (stored as a data URL).
+    const uploaded = profile?.uploads?.[name];
+    if (uploaded) return uploaded;
+
+    // 2) A filename the user dropped into the profile's avatars folder.
+    const file = profile?.avatars?.[name];
+    if (file) {
+        const folder = encodeURIComponent(profile.folder || 'default');
+        const encodedFile = encodeURIComponent(file);
+        try {
+            return new URL(`avatars/${folder}/${encodedFile}`, import.meta.url).href;
+        } catch (error) {
+            console.error('[Character Thoughts] Failed to build avatar URL:', error);
+            return null;
+        }
+    }
+
+    // 3) Nothing set -> caller draws the coloured initial circle.
+    return null;
 }
 
 /* --------------------------------- rendering -------------------------------- */
@@ -374,7 +565,7 @@ function renderThoughtsList(body) {
 
     body.innerHTML = names.map((name) => {
         const item = map[name];
-        const url = resolveAvatarUrl(name);
+        const url = resolveAvatarSrc(name);
         const hue = hueForName(name);
 
         const avatar = url
@@ -431,15 +622,33 @@ function renderSettings(container) {
     }).join('');
 
     const charRows = knownNames.length
-        ? knownNames.map((name) => `
-            <div class="ct-char-row">
-                <span class="ct-char-name">${escapeHtml(name)}</span>
-                <input class="ct-char-file" type="text" spellcheck="false"
-                    data-name="${escapeHtml(name)}"
-                    value="${escapeHtml(active.avatars?.[name] || '')}"
-                    placeholder="e.g. law.png">
-            </div>
-        `).join('')
+        ? knownNames.map((name) => {
+            const src = resolveAvatarSrc(name);
+            const hue = hueForName(name);
+            const preview = src
+                ? `<div class="ct-char-prev"><img src="${escapeHtml(src)}" alt=""></div>`
+                : `<div class="ct-char-prev ct-avatar-fallback" style="background:hsl(${hue} 48% 42%)">${escapeHtml(initial(name))}</div>`;
+            const hasUpload = !!active.uploads?.[name];
+            const clearBtn = hasUpload
+                ? `<button class="ct-char-clear" type="button" data-name="${escapeHtml(name)}" title="Remove uploaded image">✕</button>`
+                : '';
+            return `
+                <div class="ct-char-row">
+                    ${preview}
+                    <div class="ct-char-mid">
+                        <span class="ct-char-name">${escapeHtml(name)}</span>
+                        <input class="ct-char-file" type="text" spellcheck="false"
+                            data-name="${escapeHtml(name)}"
+                            value="${escapeHtml(active.avatars?.[name] || '')}"
+                            placeholder="or filename in folder">
+                    </div>
+                    <div class="ct-char-btns">
+                        <button class="ct-char-upload" type="button" data-name="${escapeHtml(name)}">Upload</button>
+                        ${clearBtn}
+                    </div>
+                </div>
+            `;
+        }).join('')
         : '<div class="ct-empty">No characters yet. They appear here after a turn with thoughts.</div>';
 
     container.innerHTML = `
@@ -459,7 +668,7 @@ function renderSettings(container) {
             <label>Avatar folder</label>
             <input id="ct-profile-folder" type="text" spellcheck="false" value="${escapeHtml(active.folder || '')}">
         </div>
-        <div class="ct-hint">Put image files in:<br>…/character-thoughts/avatars/<b>${escapeHtml(active.folder || 'folder')}</b>/</div>
+        <div class="ct-hint">Tip: click <b>Upload</b> on a character to pick and crop an image. The filename field is an optional fallback for files placed in …/avatars/<b>${escapeHtml(active.folder || 'folder')}</b>/.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Avatars by character</div>
         <div id="ct-char-list">${charRows}</div>
@@ -536,6 +745,33 @@ function renderSettings(container) {
                 delete all[activeId].avatars[name];
             }
             saveProfiles(all);
+            renderSettings(container);
+            renderPanel();
+        });
+    });
+
+    container.querySelectorAll('.ct-char-upload').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const name = btn.getAttribute('data-name');
+            pickImageFile((file) => {
+                openImageCropper(file, (dataUrl) => {
+                    const ok = setUploadedAvatar(name, dataUrl);
+                    if (!ok) {
+                        alert('Not enough browser storage to save this avatar. Try removing some saved images.');
+                        return;
+                    }
+                    renderSettings(container);
+                    renderPanel();
+                });
+            });
+        });
+    });
+
+    container.querySelectorAll('.ct-char-clear').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const name = btn.getAttribute('data-name');
+            setUploadedAvatar(name, null);
+            renderSettings(container);
             renderPanel();
         });
     });
