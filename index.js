@@ -1,9 +1,9 @@
-// Character Thoughts v0.5
+// Character Thoughts v0.6
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// v0.5: per-character avatar upload with a square drag/zoom cropper; the image
-// is downscaled to 256px and stored in the profile (data URL). Filename-in-folder
-// remains as a fallback. Panel draggable; profiles create/delete; tag-extraction fix.
+// v0.6: profiles are bound to the ST CARD, not the chat — switching chats on the
+// same card keeps one profile (no more duplicates); switching cards auto-uses
+// that card's profile (created once). Avatar upload with crop; draggable panel.
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
@@ -22,7 +22,7 @@ import {
 
 const THOUGHTS_KEY = 'ct_thoughts_v1';
 const PROFILES_KEY = 'ct_profiles_v1';
-const CHATMAP_KEY = 'ct_chatmap_v1';
+const CARDMAP_KEY = 'ct_cardmap_v1';
 const DEBUG = false;
 
 function log(...args) {
@@ -156,21 +156,21 @@ function saveProfiles(profiles) {
     }
 }
 
-function getChatMap() {
+function getCardMap() {
     try {
-        const raw = localStorage.getItem(CHATMAP_KEY);
+        const raw = localStorage.getItem(CARDMAP_KEY);
         return raw ? JSON.parse(raw) : {};
     } catch (error) {
-        console.error('[Character Thoughts] Failed to read chat map:', error);
+        console.error('[Character Thoughts] Failed to read card map:', error);
         return {};
     }
 }
 
-function saveChatMap(map) {
+function saveCardMap(map) {
     try {
-        localStorage.setItem(CHATMAP_KEY, JSON.stringify(map));
+        localStorage.setItem(CARDMAP_KEY, JSON.stringify(map));
     } catch (error) {
-        console.error('[Character Thoughts] Failed to save chat map:', error);
+        console.error('[Character Thoughts] Failed to save card map:', error);
     }
 }
 
@@ -188,27 +188,23 @@ function ensureProfile(profileId, displayName) {
     return profiles[profileId];
 }
 
-// Which AU profile is active for the current chat.
-// Default: derive from the ST card name, so a brand-new card -> a fresh
-// profile automatically. The chat keeps that binding once set; the menu can
-// override it manually.
+// Which AU profile is active — keyed by the ST CARD, not the chat.
+// All chats of the same card share one profile (so switching chats never
+// spawns duplicates). A card seen for the first time gets its own profile
+// created automatically once. The menu can override the binding per card.
 function getActiveProfileId() {
-    const chatId = getCurrentChatId();
-    const map = getChatMap();
+    const cardName = getCurrentCardName();
+    const map = getCardMap();
 
-    if (chatId && map[chatId]) {
-        return map[chatId];
+    if (map[cardName]) {
+        return map[cardName];
     }
 
-    const cardName = getCurrentCardName();
+    // First time we see this card: create its profile and bind it.
     const profileId = `card:${cardName}`;
     ensureProfile(profileId, cardName);
-
-    if (chatId) {
-        map[chatId] = profileId;
-        saveChatMap(map);
-    }
-
+    map[cardName] = profileId;
+    saveCardMap(map);
     return profileId;
 }
 
@@ -217,12 +213,13 @@ function getActiveProfile() {
     return profiles[getActiveProfileId()] || { name: 'default', folder: 'default', avatars: {} };
 }
 
+// Manual override: remember the chosen profile FOR THIS CARD, so it sticks
+// across all of the card's chats.
 function setActiveProfileId(profileId) {
-    const chatId = getCurrentChatId();
-    if (!chatId) return;
-    const map = getChatMap();
-    map[chatId] = profileId;
-    saveChatMap(map);
+    const cardName = getCurrentCardName();
+    const map = getCardMap();
+    map[cardName] = profileId;
+    saveCardMap(map);
 }
 
 /* --------------------------------- parsing --------------------------------- */
@@ -629,9 +626,7 @@ function renderSettings(container) {
                 ? `<div class="ct-char-prev"><img src="${escapeHtml(src)}" alt=""></div>`
                 : `<div class="ct-char-prev ct-avatar-fallback" style="background:hsl(${hue} 48% 42%)">${escapeHtml(initial(name))}</div>`;
             const hasUpload = !!active.uploads?.[name];
-            const clearBtn = hasUpload
-                ? `<button class="ct-char-clear" type="button" data-name="${escapeHtml(name)}" title="Remove uploaded image">✕</button>`
-                : '';
+            const clearBtn = `<button class="ct-char-clear${hasUpload ? '' : ' ct-hidden'}" type="button" data-name="${escapeHtml(name)}" title="Remove uploaded image">✕</button>`;
             return `
                 <div class="ct-char-row">
                     ${preview}
