@@ -1,0 +1,12 @@
+{
+    "display_name": "Character Thoughts",
+    "loading_order": 11,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Wani",
+    "version": "0.1.0",
+    "homePage": "https://github.com/Wanichka",
+    "auto_update": true
+}
