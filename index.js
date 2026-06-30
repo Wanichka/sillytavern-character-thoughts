@@ -635,13 +635,7 @@ function renderSettings(container) {
             return `
                 <div class="ct-char-row">
                     ${preview}
-                    <div class="ct-char-mid">
-                        <span class="ct-char-name">${escapeHtml(name)}</span>
-                        <input class="ct-char-file" type="text" spellcheck="false"
-                            data-name="${escapeHtml(name)}"
-                            value="${escapeHtml(active.avatars?.[name] || '')}"
-                            placeholder="or filename in folder">
-                    </div>
+                    <span class="ct-char-name">${escapeHtml(name)}</span>
                     <div class="ct-char-btns">
                         <button class="ct-char-upload" type="button" data-name="${escapeHtml(name)}">Upload</button>
                         ${clearBtn}
@@ -668,7 +662,7 @@ function renderSettings(container) {
             <label>Avatar folder</label>
             <input id="ct-profile-folder" type="text" spellcheck="false" value="${escapeHtml(active.folder || '')}">
         </div>
-        <div class="ct-hint">Tip: click <b>Upload</b> on a character to pick and crop an image. The filename field is an optional fallback for files placed in …/avatars/<b>${escapeHtml(active.folder || 'folder')}</b>/.</div>
+        <div class="ct-hint">Click <b>Upload</b> on a character to pick and crop an image. Saved avatars stay with this profile.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Avatars by character</div>
         <div id="ct-char-list">${charRows}</div>
@@ -730,24 +724,6 @@ function renderSettings(container) {
             renderSettings(container);
             renderPanel();
         }
-    });
-
-    container.querySelectorAll('.ct-char-file').forEach((input) => {
-        input.addEventListener('change', (event) => {
-            const name = event.target.getAttribute('data-name');
-            const file = event.target.value.trim();
-            const all = getProfiles();
-            if (!all[activeId]) return;
-            all[activeId].avatars = all[activeId].avatars || {};
-            if (file) {
-                all[activeId].avatars[name] = file;
-            } else {
-                delete all[activeId].avatars[name];
-            }
-            saveProfiles(all);
-            renderSettings(container);
-            renderPanel();
-        });
     });
 
     container.querySelectorAll('.ct-char-upload').forEach((btn) => {
