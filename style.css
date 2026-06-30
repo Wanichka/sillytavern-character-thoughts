@@ -46,6 +46,8 @@
     padding: 10px 12px;
     background: var(--ct-layer-1);
     border-bottom: 1px solid var(--ct-border);
+    cursor: move;
+    user-select: none;
 }
 #ct-title {
     font-size: 14px;
@@ -187,6 +189,18 @@
     color: #fff;
     cursor: pointer;
     font-weight: 700;
+}
+#ct-profile-delete {
+    flex: 0 0 auto;
+    border: none;
+    border-radius: 8px;
+    padding: 0 10px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+    cursor: pointer;
+}
+#ct-profile-delete:hover {
+    background: color-mix(in srgb, var(--ct-bg), #b3413a 50%);
 }
 .ct-hint {
     font-size: 11px;
