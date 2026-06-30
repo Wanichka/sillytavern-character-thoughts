@@ -1,0 +1,21 @@
+# --- Avatars are user-supplied images (often third-party art / IP) ---
+# Keep the folder structure, but don't ship the images themselves.
+avatars/**/*
+!avatars/
+!avatars/**/
+!avatars/**/.gitkeep
+
+# --- Node / tooling noise ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.npm/
+
+# --- Editor / OS junk ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
