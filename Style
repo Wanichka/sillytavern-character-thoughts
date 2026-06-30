@@ -1,0 +1,288 @@
+/* Character Thoughts — theme-aware styles.
+   Follows SillyTavern's current theme via its CSS variables (with fallbacks),
+   matching the Relationship Memory Tracker so the two feel like a set.
+   Signature element: each thought rendered as an intercepted inner voice —
+   italic, with a soft accent bar on the left. */
+
+#ct-panel,
+#ct-button {
+    --ct-bg: var(--SmartThemeBlurTintColor, rgba(24, 24, 28, 0.96));
+    --ct-text: var(--SmartThemeBodyColor, #f2f2f2);
+    --ct-accent: var(--SmartThemeQuoteColor, #6f6af8);
+    --ct-shadow: var(--SmartThemeShadowColor, rgba(0, 0, 0, 0.45));
+
+    --ct-border: color-mix(in srgb, var(--ct-text) 22%, transparent);
+    --ct-layer-1: color-mix(in srgb, var(--ct-bg), var(--ct-text) 7%);
+    --ct-layer-2: color-mix(in srgb, var(--ct-bg), var(--ct-text) 13%);
+    --ct-muted: color-mix(in srgb, var(--ct-text) 62%, transparent);
+
+    font-family: var(--mainFontFamily, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
+
+#ct-panel {
+    position: fixed;
+    right: 18px;
+    bottom: 138px;
+    width: 360px;
+    height: min(600px, calc(100vh - 180px));
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--ct-bg);
+    color: var(--ct-text);
+    border: 1px solid var(--ct-border);
+    border-radius: 12px;
+    box-shadow: 0 8px 28px var(--ct-shadow);
+    backdrop-filter: blur(calc(var(--SmartThemeBlurStrength, 10) * 1px));
+}
+
+#ct-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--ct-layer-1);
+    border-bottom: 1px solid var(--ct-border);
+}
+#ct-title {
+    font-size: 14px;
+    font-weight: 700;
+}
+#ct-header-actions {
+    display: flex;
+    gap: 6px;
+}
+#ct-header-actions button {
+    border: none;
+    border-radius: 8px;
+    padding: 2px 8px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1.4;
+}
+#ct-header-actions button:hover {
+    background: color-mix(in srgb, var(--ct-bg), var(--ct-text) 20%);
+}
+
+#ct-body,
+#ct-settings {
+    flex: 1 1 auto;
+    padding: 10px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* --- thought cards --- */
+.ct-card {
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    background: var(--ct-layer-1);
+    border: 1px solid var(--ct-border);
+}
+.ct-avatar {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--ct-layer-2);
+}
+.ct-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.ct-avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 17px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.ct-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.ct-name {
+    font-weight: 700;
+    color: var(--ct-accent);
+    line-height: 1.2;
+}
+.ct-mood {
+    font-size: 11px;
+    color: var(--ct-muted);
+    margin: 2px 0 6px;
+    font-style: italic;
+}
+/* signature: the thought as an intercepted inner voice */
+.ct-thought {
+    font-size: 13px;
+    line-height: 1.5;
+    font-style: italic;
+    padding-left: 10px;
+    border-left: 2px solid color-mix(in srgb, var(--ct-accent) 70%, transparent);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.ct-thought-empty {
+    opacity: 0.5;
+    font-style: normal;
+}
+.ct-empty {
+    font-size: 13px;
+    opacity: 0.7;
+    padding: 8px;
+    line-height: 1.5;
+}
+
+/* --- settings --- */
+.ct-set-row {
+    margin-bottom: 10px;
+}
+.ct-set-row label {
+    display: block;
+    font-size: 11px;
+    color: var(--ct-muted);
+    margin-bottom: 4px;
+}
+.ct-set-inline {
+    display: flex;
+    gap: 6px;
+}
+#ct-settings select,
+#ct-settings input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--ct-border);
+    background: var(--ct-bg);
+    color: var(--ct-text);
+    font-size: 12px;
+}
+#ct-profile-new {
+    flex: 0 0 auto;
+    border: none;
+    border-radius: 8px;
+    padding: 0 12px;
+    background: var(--ct-accent);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 700;
+}
+.ct-hint {
+    font-size: 11px;
+    color: var(--ct-muted);
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+.ct-hint b {
+    color: var(--ct-text);
+}
+.ct-set-divider {
+    height: 1px;
+    background: var(--ct-border);
+    margin: 12px 0;
+}
+.ct-set-label {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.ct-char-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.ct-char-name {
+    flex: 0 0 38%;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ct-char-file {
+    flex: 1 1 auto;
+}
+
+/* --- footer actions --- */
+#ct-actions {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 8px;
+    padding: 10px;
+    background: var(--ct-bg);
+    border-top: 1px solid var(--ct-border);
+}
+#ct-actions button {
+    flex: 1;
+    border: none;
+    border-radius: 8px;
+    padding: 7px 6px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+}
+#ct-actions button:hover {
+    background: color-mix(in srgb, var(--ct-bg), var(--ct-text) 20%);
+}
+
+/* --- floating button --- */
+#ct-button {
+    position: fixed;
+    right: 18px;
+    bottom: 93px;
+    z-index: 9999;
+    border: none;
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: var(--ct-accent);
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    box-shadow: 0 4px 16px var(--ct-shadow);
+    font-weight: 700;
+}
+#ct-button:hover {
+    background: color-mix(in srgb, var(--ct-accent), var(--ct-text) 12%);
+}
+
+/* --- mobile --- */
+@media (max-width: 600px) {
+    #ct-button {
+        position: fixed !important;
+        left: 12px !important;
+        right: 12px !important;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 58px) !important;
+        width: auto !important;
+        z-index: 2147483647 !important;
+        text-align: center !important;
+        padding: 10px 12px !important;
+        border-radius: 12px !important;
+        font-size: 14px !important;
+    }
+    #ct-panel {
+        position: fixed !important;
+        left: 8px !important;
+        right: 8px !important;
+        top: 8px !important;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 104px) !important;
+        width: auto !important;
+        height: auto !important;
+        z-index: 2147483646 !important;
+    }
+}
