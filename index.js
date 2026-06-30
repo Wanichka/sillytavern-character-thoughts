@@ -1,7 +1,9 @@
-// Character Thoughts v0.2
+// Character Thoughts v0.4
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// UI: refresh moved into the header as an icon; Copy/Clear footer removed.
+// v0.4: fixed block extraction (tags were eaten by stripHtml -> empty panel);
+// panel is draggable by its header (the button stays fixed); profiles can be
+// created and deleted, with duplicate-name protection.
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
@@ -225,10 +227,14 @@ function setActiveProfileId(profileId) {
 /* --------------------------------- parsing --------------------------------- */
 
 function extractTagBlock(text, tag) {
-    const plain = normalizeText(text);
+    // Match the tag in the RAW text first. normalizeText() runs text through the
+    // DOM (stripHtml), which turns <char_thoughts> into a real, empty element and
+    // drops the literal tag — so the block must be captured before normalizing.
+    // Only the inner content is normalized afterwards.
+    const raw = String(text ?? '');
     const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i');
-    const match = plain.match(regex);
-    return match ? match[1].trim() : null;
+    const match = raw.match(regex);
+    return match ? normalizeText(match[1]).trim() : null;
 }
 
 function stripBlockPrefix(text) {
@@ -442,6 +448,7 @@ function renderSettings(container) {
             <div class="ct-set-inline">
                 <select id="ct-profile-select">${profileOptions}</select>
                 <button id="ct-profile-new" type="button" title="New profile">＋</button>
+                <button id="ct-profile-delete" type="button" title="Delete this profile">🗑</button>
             </div>
         </div>
         <div class="ct-set-row">
@@ -465,11 +472,34 @@ function renderSettings(container) {
     });
 
     container.querySelector('#ct-profile-new')?.addEventListener('click', () => {
-        const name = prompt('New profile (AU) name:');
+        const name = (prompt('New profile (AU) name:') || '').trim();
         if (!name) return;
-        const id = `manual:${slugify(name)}:${Date.now()}`;
-        ensureProfile(id, name);
+        const all = getProfiles();
+        // If a profile with this name already exists, switch to it instead of
+        // creating a duplicate.
+        const existingId = Object.keys(all).find(
+            (id) => (all[id].name || '').toLowerCase() === name.toLowerCase()
+        );
+        const id = existingId || `manual:${slugify(name)}:${Date.now()}`;
+        if (!existingId) ensureProfile(id, name);
         setActiveProfileId(id);
+        renderSettings(container);
+        renderPanel();
+    });
+
+    container.querySelector('#ct-profile-delete')?.addEventListener('click', () => {
+        const all = getProfiles();
+        const ids = Object.keys(all);
+        if (ids.length <= 1) {
+            alert('Can’t delete the only profile.');
+            return;
+        }
+        const label = all[activeId]?.name || activeId;
+        if (!confirm(`Delete profile “${label}”?\nThe avatar image files on disk are NOT removed.`)) return;
+        delete all[activeId];
+        saveProfiles(all);
+        // Point this chat at another existing profile so it isn't recreated.
+        setActiveProfileId(Object.keys(all)[0]);
         renderSettings(container);
         renderPanel();
     });
@@ -540,6 +570,96 @@ function showView(view) {
     }
 }
 
+/* ------------------------------- draggable UI ------------------------------- */
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function applyPosition(el, left, top) {
+    // Inline !important beats the fixed-position rules (and the mobile media
+    // query) in style.css, so a dragged element actually moves.
+    el.style.setProperty('left', `${left}px`, 'important');
+    el.style.setProperty('top', `${top}px`, 'important');
+    el.style.setProperty('right', 'auto', 'important');
+    el.style.setProperty('bottom', 'auto', 'important');
+}
+
+function restorePosition(el, storageKey) {
+    try {
+        const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+        if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+            const left = clamp(saved.left, 0, Math.max(0, window.innerWidth - 48));
+            const top = clamp(saved.top, 0, Math.max(0, window.innerHeight - 48));
+            applyPosition(el, left, top);
+        }
+    } catch (error) {
+        console.error('[Character Thoughts] Failed to restore position:', error);
+    }
+}
+
+// Drag `el` by `handle`; remembers position. clickAction (if any) fires only on
+// a genuine click, never at the end of a drag, and inner <button>s in the
+// handle keep working.
+function makeDraggable(el, { storageKey, handle = el, clickAction = null } = {}) {
+    restorePosition(el, storageKey);
+    handle.style.touchAction = 'none';
+
+    let dragging = false;
+    let moved = false;
+    let startX = 0;
+    let startY = 0;
+    let baseLeft = 0;
+    let baseTop = 0;
+
+    handle.addEventListener('pointerdown', (event) => {
+        const innerButton = event.target.closest('button');
+        if (innerButton && innerButton !== el) return;
+        if (event.button != null && event.button !== 0) return;
+
+        dragging = true;
+        moved = false;
+        const rect = el.getBoundingClientRect();
+        baseLeft = rect.left;
+        baseTop = rect.top;
+        startX = event.clientX;
+        startY = event.clientY;
+        try { handle.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+    });
+
+    handle.addEventListener('pointermove', (event) => {
+        if (!dragging) return;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < 5) return;
+        moved = true;
+        const left = clamp(baseLeft + dx, 0, window.innerWidth - el.offsetWidth);
+        const top = clamp(baseTop + dy, 0, window.innerHeight - el.offsetHeight);
+        applyPosition(el, left, top);
+    });
+
+    function finish(event) {
+        if (!dragging) return;
+        dragging = false;
+        try { handle.releasePointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+        if (moved) {
+            const rect = el.getBoundingClientRect();
+            try {
+                localStorage.setItem(storageKey, JSON.stringify({ left: rect.left, top: rect.top }));
+            } catch (e) { /* ignore */ }
+        }
+    }
+    handle.addEventListener('pointerup', finish);
+    handle.addEventListener('pointercancel', finish);
+
+    if (clickAction) {
+        el.addEventListener('click', (event) => {
+            if (moved) { moved = false; return; }
+            clickAction(event);
+        });
+    }
+}
+
 function createUi() {
     if (document.querySelector('#ct-panel')) return;
 
@@ -567,14 +687,17 @@ function createUi() {
 
     let settingsOpen = false;
 
-    button.addEventListener('click', () => {
+    function toggleButton() {
         const visible = panel.style.display !== 'none';
         panel.style.display = visible ? 'none' : 'block';
         if (!visible) {
             settingsOpen = false;
             showView('list');
         }
-    });
+    }
+
+    button.addEventListener('click', toggleButton);
+    makeDraggable(panel, { storageKey: 'ct_panel_pos', handle: panel.querySelector('#ct-header') });
 
     panel.querySelector('#ct-close').addEventListener('click', () => {
         panel.style.display = 'none';
