@@ -68,6 +68,13 @@
 #ct-header-actions button:hover {
     background: color-mix(in srgb, var(--ct-bg), var(--ct-text) 20%);
 }
+#ct-refresh.ct-spinning {
+    animation: ct-spin 0.5s ease;
+}
+@keyframes ct-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
 
 #ct-body,
 #ct-settings {
@@ -215,30 +222,6 @@
 }
 .ct-char-file {
     flex: 1 1 auto;
-}
-
-/* --- footer actions --- */
-#ct-actions {
-    flex: 0 0 auto;
-    display: flex;
-    gap: 8px;
-    padding: 10px;
-    background: var(--ct-bg);
-    border-top: 1px solid var(--ct-border);
-}
-#ct-actions button {
-    flex: 1;
-    border: none;
-    border-radius: 8px;
-    padding: 7px 6px;
-    background: var(--ct-layer-2);
-    color: var(--ct-text);
-    cursor: pointer;
-    font-weight: 700;
-    font-size: 12px;
-}
-#ct-actions button:hover {
-    background: color-mix(in srgb, var(--ct-bg), var(--ct-text) 20%);
 }
 
 /* --- floating button --- */
