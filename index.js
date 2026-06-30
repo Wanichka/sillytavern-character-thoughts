@@ -1,9 +1,8 @@
-// Character Thoughts v0.6
+// Character Thoughts v0.7
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// v0.6: profiles are bound to the ST CARD, not the chat — switching chats on the
-// same card keeps one profile (no more duplicates); switching cards auto-uses
-// that card's profile (created once). Avatar upload with crop; draggable panel.
+// v0.7: parser now accepts dots in names (e.g. "Trafalgar D. Water Law").
+// Profiles bound to the ST card; avatar upload with crop; draggable panel.
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
@@ -248,7 +247,10 @@ function parseNamedSegments(block) {
     const text = stripBlockPrefix(block);
     if (!text) return [];
 
-    const headerRegex = /(?:^|;)\s*([^:;\n.!?…]{1,40}?)\s*:\s*/g;
+    // A new character starts at the block start or after ';', followed by a
+    // short "Name:". Dots are allowed in names (e.g. "Trafalgar D. Water Law");
+    // !?… stay excluded so a whole exclamatory sentence can't be read as a name.
+    const headerRegex = /(?:^|;)\s*([^:;\n!?…]{1,40}?)\s*:\s*/g;
     const headers = [];
     let match;
 
