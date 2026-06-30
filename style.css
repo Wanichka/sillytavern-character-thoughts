@@ -225,17 +225,147 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
+}
+.ct-char-prev {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--ct-layer-2);
+}
+.ct-char-prev img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.ct-char-mid {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 .ct-char-name {
-    flex: 0 0 38%;
+    display: block;
     font-size: 12px;
+    font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    margin-bottom: 3px;
 }
-.ct-char-file {
-    flex: 1 1 auto;
+#ct-settings .ct-char-file {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--ct-border);
+    background: var(--ct-bg);
+    color: var(--ct-muted);
+    font-size: 11px;
+}
+.ct-char-btns {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.ct-char-upload {
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    background: var(--ct-accent);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 11px;
+}
+.ct-char-clear {
+    border: none;
+    border-radius: 8px;
+    padding: 6px 8px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+    cursor: pointer;
+    font-size: 11px;
+}
+.ct-char-clear:hover {
+    background: color-mix(in srgb, var(--ct-bg), #b3413a 50%);
+}
+
+/* --- avatar cropper modal --- */
+.ct-crop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
+}
+.ct-crop-box {
+    background: var(--ct-bg);
+    color: var(--ct-text);
+    border: 1px solid var(--ct-border);
+    border-radius: 14px;
+    box-shadow: 0 12px 40px var(--ct-shadow);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+.ct-crop-title {
+    font-weight: 700;
+    font-size: 14px;
+    align-self: flex-start;
+}
+.ct-crop-window {
+    position: relative;
+    overflow: hidden;
+    border-radius: 50%;
+    border: 2px solid var(--ct-accent);
+    background: #000;
+    cursor: grab;
+    touch-action: none;
+}
+.ct-crop-window:active {
+    cursor: grabbing;
+}
+.ct-crop-img {
+    position: absolute;
+    left: 0;
+    top: 0;
+    max-width: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+.ct-crop-zoom {
+    width: 100%;
+    accent-color: var(--ct-accent);
+}
+.ct-crop-actions {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+.ct-crop-actions button {
+    flex: 1;
+    border: none;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+}
+.ct-crop-cancel {
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+}
+.ct-crop-save {
+    background: var(--ct-accent);
+    color: #fff;
 }
 
 /* --- floating button --- */
