@@ -9,7 +9,7 @@
     --ct-bg: var(--SmartThemeBlurTintColor, rgba(24, 24, 28, 0.96));
     --ct-text: var(--SmartThemeBodyColor, #f2f2f2);
     --ct-accent: var(--SmartThemeQuoteColor, #6f6af8);
-    --ct-shadow: var(--SmartThemeShadowColor, rgba(0, 0, 0, 0.45));
+    --ct-shadow: rgba(0, 0, 0, 0.45);
 
     --ct-border: color-mix(in srgb, var(--ct-text) 22%, transparent);
     --ct-layer-1: color-mix(in srgb, var(--ct-bg), var(--ct-text) 7%);
@@ -33,7 +33,6 @@
     color: var(--ct-text);
     border: 1px solid var(--ct-border);
     border-radius: 12px;
-    box-shadow: 0 8px 28px var(--ct-shadow);
     backdrop-filter: blur(calc(var(--SmartThemeBlurStrength, 10) * 1px));
 }
 
@@ -294,7 +293,6 @@
     color: var(--ct-text);
     border: 1px solid var(--ct-border);
     border-radius: 14px;
-    box-shadow: 0 12px 40px var(--ct-shadow);
     padding: 16px;
     display: flex;
     flex-direction: column;
@@ -366,7 +364,6 @@
     color: #fff;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
     cursor: pointer;
-    box-shadow: 0 4px 16px var(--ct-shadow);
     font-weight: 700;
 }
 #ct-button:hover {
