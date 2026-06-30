@@ -241,28 +241,13 @@
     object-fit: cover;
     display: block;
 }
-.ct-char-mid {
-    flex: 1 1 auto;
-    min-width: 0;
-}
 .ct-char-name {
-    display: block;
+    flex: 1 1 auto;
     font-size: 12px;
     font-weight: 600;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin-bottom: 3px;
-}
-#ct-settings .ct-char-file {
-    width: 100%;
-    box-sizing: border-box;
-    padding: 4px 6px;
-    border-radius: 6px;
-    border: 1px solid var(--ct-border);
-    background: var(--ct-bg);
-    color: var(--ct-muted);
-    font-size: 11px;
 }
 .ct-char-btns {
     flex: 0 0 auto;
