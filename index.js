@@ -1,6 +1,7 @@
-// Character Thoughts v0.1
+// Character Thoughts v0.2
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
+// UI: refresh moved into the header as an icon; Copy/Clear footer removed.
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
@@ -336,18 +337,6 @@ function getLastAssistantMessageText() {
     return '';
 }
 
-function parseLastMessageManually() {
-    const text = getLastAssistantMessageText();
-    if (!text) {
-        alert('Could not read the last message.');
-        return;
-    }
-    const ok = updateFromText(text, true);
-    if (ok) {
-        alert('Thoughts updated from the last message.');
-    }
-}
-
 /* --------------------------------- avatars --------------------------------- */
 
 function resolveAvatarUrl(name) {
@@ -566,16 +555,13 @@ function createUi() {
         <div id="ct-header">
             <div id="ct-title">Character Thoughts</div>
             <div id="ct-header-actions">
+                <button id="ct-refresh" type="button" title="Refresh from last message">⟳</button>
                 <button id="ct-gear" type="button" title="Settings">⚙</button>
                 <button id="ct-close" type="button" title="Close">×</button>
             </div>
         </div>
         <div id="ct-body"></div>
         <div id="ct-settings" style="display:none"></div>
-        <div id="ct-actions">
-            <button id="ct-parse" type="button">Parse last</button>
-            <button id="ct-clear" type="button">Clear</button>
-        </div>
     `;
     document.body.appendChild(panel);
 
@@ -599,14 +585,15 @@ function createUi() {
         showView(settingsOpen ? 'settings' : 'list');
     });
 
-    panel.querySelector('#ct-parse').addEventListener('click', () => {
-        parseLastMessageManually();
-    });
+    panel.querySelector('#ct-refresh').addEventListener('click', () => {
+        const btn = panel.querySelector('#ct-refresh');
+        // Restart the spin animation on every click for tactile feedback.
+        btn.classList.remove('ct-spinning');
+        void btn.offsetWidth;
+        btn.classList.add('ct-spinning');
 
-    panel.querySelector('#ct-clear').addEventListener('click', () => {
-        if (!confirm('Clear captured thoughts for this chat?')) return;
-        localStorage.removeItem(getThoughtsKey());
-        renderPanel();
+        const text = getLastAssistantMessageText();
+        if (text) updateFromText(text, false);
     });
 }
 
