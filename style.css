@@ -80,6 +80,7 @@
 #ct-body,
 #ct-settings {
     flex: 1 1 auto;
+    min-height: 0;
     padding: 10px;
     overflow-y: auto;
     overflow-x: hidden;
@@ -241,7 +242,7 @@
     display: block;
 }
 .ct-char-name {
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     font-size: 12px;
     font-weight: 600;
     overflow: hidden;
@@ -253,6 +254,7 @@
     display: flex;
     gap: 4px;
     align-items: center;
+    margin-left: auto;
 }
 .ct-char-upload {
     border: none;
@@ -272,6 +274,10 @@
     color: var(--ct-text);
     cursor: pointer;
     font-size: 11px;
+}
+.ct-char-clear.ct-hidden {
+    visibility: hidden;
+    pointer-events: none;
 }
 .ct-char-clear:hover {
     background: color-mix(in srgb, var(--ct-bg), #b3413a 50%);
