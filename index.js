@@ -1,9 +1,8 @@
-// Character Thoughts v0.8
+// Character Thoughts v0.9
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// v0.8: dragging is bounded to the viewport with a top margin, so the header
-// can't be lost under a browser toolbar (tablet fix); list scrolls (min-height).
-// Parser accepts dotted names; profiles bound to the ST card; avatar upload.
+// v0.9: panel opens as display:flex (was block), which restores the scroll of a
+// long character list. Dragging bounded to viewport; dotted names; card profiles.
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
@@ -913,7 +912,7 @@ function createUi() {
 
     function toggleButton() {
         const visible = panel.style.display !== 'none';
-        panel.style.display = visible ? 'none' : 'block';
+        panel.style.display = visible ? 'none' : 'flex';
         if (!visible) {
             settingsOpen = false;
             showView('list');
