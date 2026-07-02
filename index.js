@@ -1,8 +1,9 @@
-// Character Thoughts v0.7
+// Character Thoughts v0.8
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// v0.7: parser now accepts dots in names (e.g. "Trafalgar D. Water Law").
-// Profiles bound to the ST card; avatar upload with crop; draggable panel.
+// v0.8: dragging is bounded to the viewport with a top margin, so the header
+// can't be lost under a browser toolbar (tablet fix); list scrolls (min-height).
+// Parser accepts dotted names; profiles bound to the ST card; avatar upload.
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
@@ -785,6 +786,22 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
+// Keep a dragged element on-screen. The top margin ensures the draggable
+// header can never hide under a floating browser toolbar (tablet/mobile).
+const DRAG_EDGE = 8;
+const DRAG_TOP_MARGIN = 50;
+
+function clampToViewport(el, left, top) {
+    const w = el.offsetWidth || 0;
+    const h = el.offsetHeight || 0;
+    const maxLeft = Math.max(DRAG_EDGE, window.innerWidth - w - DRAG_EDGE);
+    const maxTop = Math.max(DRAG_TOP_MARGIN, window.innerHeight - h - DRAG_EDGE);
+    return {
+        left: clamp(left, DRAG_EDGE, maxLeft),
+        top: clamp(top, DRAG_TOP_MARGIN, maxTop),
+    };
+}
+
 function applyPosition(el, left, top) {
     // Inline !important beats the fixed-position rules (and the mobile media
     // query) in style.css, so a dragged element actually moves.
@@ -798,9 +815,8 @@ function restorePosition(el, storageKey) {
     try {
         const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
         if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
-            const left = clamp(saved.left, 0, Math.max(0, window.innerWidth - 48));
-            const top = clamp(saved.top, 0, Math.max(0, window.innerHeight - 48));
-            applyPosition(el, left, top);
+            const p = clampToViewport(el, saved.left, saved.top);
+            applyPosition(el, p.left, p.top);
         }
     } catch (error) {
         console.error('[Character Thoughts] Failed to restore position:', error);
@@ -842,9 +858,8 @@ function makeDraggable(el, { storageKey, handle = el, clickAction = null } = {})
         const dy = event.clientY - startY;
         if (!moved && Math.hypot(dx, dy) < 5) return;
         moved = true;
-        const left = clamp(baseLeft + dx, 0, window.innerWidth - el.offsetWidth);
-        const top = clamp(baseTop + dy, 0, window.innerHeight - el.offsetHeight);
-        applyPosition(el, left, top);
+        const p = clampToViewport(el, baseLeft + dx, baseTop + dy);
+        applyPosition(el, p.left, p.top);
     });
 
     function finish(event) {
