@@ -1,8 +1,11 @@
-// Character Thoughts v0.9
+// Character Thoughts v1.0
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// v0.9: panel opens as display:flex (was block), which restores the scroll of a
-// long character list. Dragging bounded to viewport; dotted names; card profiles.
+// v1.0: the top gap for floating browser toolbars is now enforced in CSS too
+// (--ct-top-gap), not only during drags; DRAG_TOP_MARGIN raised to match it;
+// clamping uses visualViewport when available; saved positions are re-clamped
+// at the moment the panel is opened (a hidden panel measures 0x0) and on
+// window resize / orientation change.
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
@@ -787,14 +790,28 @@ function clamp(value, min, max) {
 
 // Keep a dragged element on-screen. The top margin ensures the draggable
 // header can never hide under a floating browser toolbar (tablet/mobile).
+// IMPORTANT: DRAG_TOP_MARGIN must match --ct-top-gap in style.css — the CSS
+// value protects the DEFAULT (never-dragged) position, this one protects
+// dragged/restored positions. Change them together.
 const DRAG_EDGE = 8;
-const DRAG_TOP_MARGIN = 50;
+const DRAG_TOP_MARGIN = 100;
+
+// Visible viewport size. visualViewport is more honest than innerWidth/Height
+// on tablets/phones where browser chrome expands and collapses.
+function viewportSize() {
+    const vv = window.visualViewport;
+    if (vv && vv.width && vv.height) {
+        return { w: vv.width, h: vv.height };
+    }
+    return { w: window.innerWidth, h: window.innerHeight };
+}
 
 function clampToViewport(el, left, top) {
     const w = el.offsetWidth || 0;
     const h = el.offsetHeight || 0;
-    const maxLeft = Math.max(DRAG_EDGE, window.innerWidth - w - DRAG_EDGE);
-    const maxTop = Math.max(DRAG_TOP_MARGIN, window.innerHeight - h - DRAG_EDGE);
+    const vp = viewportSize();
+    const maxLeft = Math.max(DRAG_EDGE, vp.w - w - DRAG_EDGE);
+    const maxTop = Math.max(DRAG_TOP_MARGIN, vp.h - h - DRAG_EDGE);
     return {
         left: clamp(left, DRAG_EDGE, maxLeft),
         top: clamp(top, DRAG_TOP_MARGIN, maxTop),
@@ -813,10 +830,12 @@ function applyPosition(el, left, top) {
 function restorePosition(el, storageKey) {
     try {
         const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-        if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
-            const p = clampToViewport(el, saved.left, saved.top);
-            applyPosition(el, p.left, p.top);
-        }
+        if (!saved || !Number.isFinite(saved.left) || !Number.isFinite(saved.top)) return;
+        // A hidden element measures 0x0, which makes the clamp meaningless.
+        // Skip now; the caller re-runs this at the moment the element is shown.
+        if (!el.offsetWidth && !el.offsetHeight) return;
+        const p = clampToViewport(el, saved.left, saved.top);
+        applyPosition(el, p.left, p.top);
     } catch (error) {
         console.error('[Character Thoughts] Failed to restore position:', error);
     }
@@ -916,11 +935,22 @@ function createUi() {
         if (!visible) {
             settingsOpen = false;
             showView('list');
+            // The panel is measurable only now that it's shown — re-clamp any
+            // saved position so it can't sit under a floating browser toolbar.
+            restorePosition(panel, 'ct_panel_pos');
         }
     }
 
     button.addEventListener('click', toggleButton);
     makeDraggable(panel, { storageKey: 'ct_panel_pos', handle: panel.querySelector('#ct-header') });
+
+    // Rotating the tablet / resizing the window changes what "on-screen" means:
+    // re-clamp an open panel so it never ends up half off the viewport.
+    window.addEventListener('resize', () => {
+        if (panel.style.display !== 'none') {
+            restorePosition(panel, 'ct_panel_pos');
+        }
+    });
 
     panel.querySelector('#ct-close').addEventListener('click', () => {
         panel.style.display = 'none';
