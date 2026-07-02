@@ -2,7 +2,12 @@
    Follows SillyTavern's current theme via its CSS variables (with fallbacks),
    matching the Relationship Memory Tracker so the two feel like a set.
    Signature element: each thought rendered as an intercepted inner voice —
-   italic, with a soft accent bar on the left. */
+   italic, with a soft accent bar on the left.
+
+   --ct-top-gap keeps the panel's header clear of floating browser toolbars
+   (tablet/mobile). It must match DRAG_TOP_MARGIN in index.js — the JS value
+   protects dragged positions, this one protects the default position.
+   If your browser's toolbar is taller, raise this single value. */
 
 #ct-panel,
 #ct-button {
@@ -10,6 +15,7 @@
     --ct-text: var(--SmartThemeBodyColor, #f2f2f2);
     --ct-accent: var(--SmartThemeQuoteColor, #6f6af8);
     --ct-shadow: rgba(0, 0, 0, 0.45);
+    --ct-top-gap: 100px;
 
     --ct-border: color-mix(in srgb, var(--ct-text) 22%, transparent);
     --ct-layer-1: color-mix(in srgb, var(--ct-bg), var(--ct-text) 7%);
@@ -24,7 +30,9 @@
     right: 18px;
     bottom: 138px;
     width: 360px;
-    height: min(600px, calc(100vh - 180px));
+    /* 138px bottom anchor + --ct-top-gap of guaranteed clearance at the top,
+       so the header can't slide under a floating toolbar even by default. */
+    height: min(600px, calc(100vh - 138px - var(--ct-top-gap)));
     z-index: 9999;
     display: flex;
     flex-direction: column;
@@ -394,7 +402,7 @@
         position: fixed !important;
         left: 8px !important;
         right: 8px !important;
-        top: 8px !important;
+        top: calc(env(safe-area-inset-top, 0px) + var(--ct-top-gap)) !important;
         bottom: calc(env(safe-area-inset-bottom, 0px) + 104px) !important;
         width: auto !important;
         height: auto !important;
