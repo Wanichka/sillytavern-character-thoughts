@@ -1,205 +1,411 @@
-/* Context Tracker — theme-aware styles.
-   Uses the same design system as Character Thoughts / Relationship Memory
-   (shared variable scheme, layer colors via color-mix, 12px radius,
-   header on layer-1) so the three extensions read as one set. */
+/* Character Thoughts — theme-aware styles.
+   Follows SillyTavern's current theme via its CSS variables (with fallbacks),
+   matching the Relationship Memory Tracker so the two feel like a set.
+   Signature element: each thought rendered as an intercepted inner voice —
+   italic, with a soft accent bar on the left.
 
-#ctx-tracker-badge {
-    --ctt-bg: var(--SmartThemeBlurTintColor, rgba(24, 24, 28, 0.96));
-    --ctt-text: var(--SmartThemeBodyColor, #f2f2f2);
-    --ctt-accent: var(--SmartThemeQuoteColor, #6f6af8);
+   --ct-top-gap keeps the panel's header clear of floating browser toolbars
+   (tablet/mobile). It must match DRAG_TOP_MARGIN in index.js — the JS value
+   protects dragged positions, this one protects the default position.
+   If your browser's toolbar is taller, raise this single value. */
 
-    --ctt-border: color-mix(in srgb, var(--ctt-text) 22%, transparent);
-    --ctt-layer-1: color-mix(in srgb, var(--ctt-bg), var(--ctt-text) 7%);
-    --ctt-muted: color-mix(in srgb, var(--ctt-text) 62%, transparent);
+#ct-panel,
+#ct-button {
+    --ct-bg: var(--SmartThemeBlurTintColor, rgba(24, 24, 28, 0.96));
+    --ct-text: var(--SmartThemeBodyColor, #f2f2f2);
+    --ct-accent: var(--SmartThemeQuoteColor, #6f6af8);
+    --ct-shadow: rgba(0, 0, 0, 0.45);
+    --ct-top-gap: 100px;
+
+    --ct-border: color-mix(in srgb, var(--ct-text) 22%, transparent);
+    --ct-layer-1: color-mix(in srgb, var(--ct-bg), var(--ct-text) 7%);
+    --ct-layer-2: color-mix(in srgb, var(--ct-bg), var(--ct-text) 13%);
+    --ct-muted: color-mix(in srgb, var(--ct-text) 62%, transparent);
 
     font-family: var(--mainFontFamily, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+}
 
+#ct-panel {
     position: fixed;
-    z-index: 9999;
+    right: 18px;
+    bottom: 138px;
     width: 360px;
-    padding: 0;
+    /* 138px bottom anchor + --ct-top-gap of guaranteed clearance at the top,
+       so the header can't slide under a floating toolbar even by default. */
+    height: min(600px, calc(100vh - 138px - var(--ct-top-gap)));
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
-    background: var(--ctt-bg);
-    color: var(--ctt-text);
-    border: 1px solid var(--ctt-border);
+    background: var(--ct-bg);
+    color: var(--ct-text);
+    border: 1px solid var(--ct-border);
     border-radius: 12px;
     backdrop-filter: blur(calc(var(--SmartThemeBlurStrength, 10) * 1px));
-    font-size: 12px;
-    line-height: 1.5;
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: none; /* dragging works on touch screens too */
-    cursor: grab;
-    transform-origin: top left; /* uniform scaling via the corner grip */
 }
 
-#ctx-tracker-badge.ctt-dragging {
-    cursor: grabbing;
-    opacity: 0.92;
-}
-
-#ctx-tracker-badge.ctt-resizing {
-    opacity: 0.92;
-}
-
-/* legacy element, unused in this design */
-#ctx-tracker-badge .ctt-accent {
-    display: none;
-}
-
-/* header strip — same recipe as the panels' headers */
-#ctx-tracker-badge .ctt-header {
+#ct-header {
+    flex: 0 0 auto;
     display: flex;
+    align-items: center;
     justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--ct-layer-1);
+    border-bottom: 1px solid var(--ct-border);
+    cursor: move;
+    user-select: none;
+}
+#ct-title {
+    font-size: 14px;
+    font-weight: 700;
+}
+#ct-header-actions {
+    display: flex;
+    gap: 6px;
+}
+#ct-header-actions button {
+    border: none;
+    border-radius: 8px;
+    padding: 2px 8px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1.4;
+}
+#ct-header-actions button:hover {
+    background: color-mix(in srgb, var(--ct-bg), var(--ct-text) 20%);
+}
+#ct-refresh.ct-spinning {
+    animation: ct-spin 0.5s ease;
+}
+@keyframes ct-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+#ct-body,
+#ct-settings {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 10px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* --- thought cards --- */
+.ct-card {
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    background: var(--ct-layer-1);
+    border: 1px solid var(--ct-border);
+}
+.ct-avatar {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--ct-layer-2);
+}
+.ct-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.ct-avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 17px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+.ct-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.ct-name {
+    font-weight: 700;
+    color: var(--ct-accent);
+    line-height: 1.2;
+}
+.ct-mood {
+    font-size: 11px;
+    color: var(--ct-muted);
+    margin: 2px 0 6px;
+    font-style: italic;
+}
+/* signature: the thought as an intercepted inner voice */
+.ct-thought {
+    font-size: 13px;
+    line-height: 1.5;
+    font-style: italic;
+    padding-left: 10px;
+    border-left: 2px solid color-mix(in srgb, var(--ct-accent) 70%, transparent);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.ct-thought-empty {
+    opacity: 0.5;
+    font-style: normal;
+}
+.ct-empty {
+    font-size: 13px;
+    opacity: 0.7;
+    padding: 8px;
+    line-height: 1.5;
+}
+
+/* --- settings --- */
+.ct-set-row {
+    margin-bottom: 10px;
+}
+.ct-set-row label {
+    display: block;
+    font-size: 11px;
+    color: var(--ct-muted);
+    margin-bottom: 4px;
+}
+.ct-set-inline {
+    display: flex;
+    gap: 6px;
+}
+#ct-settings select,
+#ct-settings input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--ct-border);
+    background: var(--ct-bg);
+    color: var(--ct-text);
+    font-size: 12px;
+}
+#ct-profile-new {
+    flex: 0 0 auto;
+    border: none;
+    border-radius: 8px;
+    padding: 0 12px;
+    background: var(--ct-accent);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 700;
+}
+#ct-profile-delete {
+    flex: 0 0 auto;
+    border: none;
+    border-radius: 8px;
+    padding: 0 10px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+    cursor: pointer;
+}
+#ct-profile-delete:hover {
+    background: color-mix(in srgb, var(--ct-bg), #b3413a 50%);
+}
+.ct-hint {
+    font-size: 11px;
+    color: var(--ct-muted);
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+.ct-hint b {
+    color: var(--ct-text);
+}
+.ct-set-divider {
+    height: 1px;
+    background: var(--ct-border);
+    margin: 12px 0;
+}
+.ct-set-label {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.ct-char-row {
+    display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 12px;
-    background: var(--ctt-layer-1);
-    border-bottom: 1px solid var(--ctt-border);
+    margin-bottom: 8px;
 }
-
-#ctx-tracker-badge .ctt-title {
+.ct-char-prev {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--ct-layer-2);
+}
+.ct-char-prev img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.ct-char-name {
+    flex: 0 1 auto;
     font-size: 12px;
-    font-weight: 700;
-    text-transform: capitalize;
-}
-
-/* stats row */
-#ctx-tracker-badge .ctt-stats {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    margin: 9px 12px 0;
-}
-
-#ctx-tracker-badge .ctt-stat {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
-
-#ctx-tracker-badge .ctt-label {
-    font-size: 9.5px;
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-    color: var(--ctt-muted);
+.ct-char-btns {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    margin-left: auto;
 }
-
-#ctx-tracker-badge .ctt-val {
+.ct-char-upload {
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    background: var(--ct-accent);
+    color: #fff;
+    cursor: pointer;
     font-weight: 700;
-    font-size: 14px;
-    font-variant-numeric: tabular-nums;
+    font-size: 11px;
 }
-
-#ctx-tracker-badge .ctt-tokens {
-    font-weight: 500;
-    font-size: 11.5px;
-    font-variant-numeric: tabular-nums;
-    color: var(--ctt-muted);
+.ct-char-clear {
+    border: none;
+    border-radius: 8px;
+    padding: 6px 8px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+    cursor: pointer;
+    font-size: 11px;
 }
-
-/* token counter when over the display limit */
-#ctx-tracker-badge .ctt-tokens.ctt-over {
-    color: var(--ctt-accent);
-    font-weight: 700;
-}
-
-/* progress toward the summary threshold — flat accent, no glow */
-#ctx-tracker-badge .ctt-progress {
-    margin: 8px 12px 11px;
-    height: 3px;
-    border-radius: 3px;
-    background: var(--ctt-border);
-    overflow: hidden;
-}
-
-#ctx-tracker-badge .ctt-progress-fill {
-    height: 100%;
-    width: 0%;
-    border-radius: 3px;
-    background: var(--ctt-accent);
-    transition: width 0.4s ease;
-}
-
-/* the "time to summarize" dot — appears when the message interval
-   is reached; calm and static, it's a planned event */
-#ctx-tracker-badge .ctt-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--ctt-accent);
-    opacity: 0;
+.ct-char-clear.ct-hidden {
+    visibility: hidden;
     pointer-events: none;
 }
-
-#ctx-tracker-badge .ctt-dot.ctt-due {
-    opacity: 1;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ctt-accent) 25%, transparent);
+.ct-char-clear:hover {
+    background: color-mix(in srgb, var(--ct-bg), #b3413a 50%);
 }
 
-/* context full (tokens over the limit) — the alarm state:
-   the progress bar, the token counter and the dot pulse together */
-#ctx-tracker-badge.ctt-full .ctt-progress-fill,
-#ctx-tracker-badge.ctt-full .ctt-tokens,
-#ctx-tracker-badge.ctt-full .ctt-dot.ctt-due {
-    animation: ctt-pulse 2.4s ease-in-out infinite;
+/* --- avatar cropper modal --- */
+.ct-crop-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483647;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(2px);
 }
-
-@keyframes ctt-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.35; }
+.ct-crop-box {
+    background: var(--ct-bg);
+    color: var(--ct-text);
+    border: 1px solid var(--ct-border);
+    border-radius: 14px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
 }
-
-/* resize grip: three diagonal lines in the bottom-right corner */
-#ctx-tracker-badge .ctt-resize {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    width: 16px;
-    height: 16px;
-    cursor: nwse-resize;
+.ct-crop-title {
+    font-weight: 700;
+    font-size: 14px;
+    align-self: flex-start;
+}
+.ct-crop-window {
+    position: relative;
+    overflow: hidden;
+    border-radius: 50%;
+    border: 2px solid var(--ct-accent);
+    background: #000;
+    cursor: grab;
     touch-action: none;
-    opacity: 0.3;
-    color: var(--ctt-muted);
-    background:
-        linear-gradient(135deg,
-            transparent 0 55%,
-            currentColor 55% 60%,
-            transparent 60% 70%,
-            currentColor 70% 75%,
-            transparent 75% 85%,
-            currentColor 85% 90%,
-            transparent 90%);
-    transition: opacity 0.2s ease;
+}
+.ct-crop-window:active {
+    cursor: grabbing;
+}
+.ct-crop-img {
+    position: absolute;
+    left: 0;
+    top: 0;
+    max-width: none;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+.ct-crop-zoom {
+    width: 100%;
+    accent-color: var(--ct-accent);
+}
+.ct-crop-actions {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+.ct-crop-actions button {
+    flex: 1;
+    border: none;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+}
+.ct-crop-cancel {
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+}
+.ct-crop-save {
+    background: var(--ct-accent);
+    color: #fff;
 }
 
-#ctx-tracker-badge:hover .ctt-resize,
-#ctx-tracker-badge.ctt-resizing .ctt-resize {
-    opacity: 0.8;
+/* --- floating button --- */
+#ct-button {
+    position: fixed;
+    right: 18px;
+    bottom: 93px;
+    z-index: 9999;
+    border: none;
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: var(--ct-accent);
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    cursor: pointer;
+    font-weight: 700;
+}
+#ct-button:hover {
+    background: color-mix(in srgb, var(--ct-accent), var(--ct-text) 12%);
 }
 
-@media (prefers-reduced-motion: reduce) {
-    #ctx-tracker-badge.ctt-full .ctt-progress-fill,
-    #ctx-tracker-badge.ctt-full .ctt-tokens,
-    #ctx-tracker-badge.ctt-full .ctt-dot.ctt-due {
-        animation: none;
+/* --- mobile --- */
+@media (max-width: 600px) {
+    #ct-button {
+        position: fixed !important;
+        left: 12px !important;
+        right: 12px !important;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 58px) !important;
+        width: auto !important;
+        z-index: 2147483647 !important;
+        text-align: center !important;
+        padding: 10px 12px !important;
+        border-radius: 12px !important;
+        font-size: 14px !important;
     }
-    #ctx-tracker-badge .ctt-progress-fill {
-        transition: none;
+    #ct-panel {
+        position: fixed !important;
+        left: 8px !important;
+        right: 8px !important;
+        top: calc(env(safe-area-inset-top, 0px) + var(--ct-top-gap)) !important;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 104px) !important;
+        width: auto !important;
+        height: auto !important;
+        z-index: 2147483646 !important;
     }
-}
-
-/* settings panel */
-.context-tracker-settings label[for="ctt_interval"],
-.context-tracker-settings label[for="ctt_token_limit"],
-.context-tracker-settings label[for="ctt_lang"] {
-    display: block;
-    margin-top: 8px;
-}
-
-.context-tracker-settings #ctt_reset_pos {
-    margin-top: 10px;
-    text-align: center;
 }
