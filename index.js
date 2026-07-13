@@ -1,1004 +1,494 @@
-// Character Thoughts v1.0
-// Shows each character's current thoughts (and mood) parsed from the
-// <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// v1.0: the top gap for floating browser toolbars is now enforced in CSS too
-// (--ct-top-gap), not only during drags; DRAG_TOP_MARGIN raised to match it;
-// clamping uses visualViewport when available; saved positions are re-clamped
-// at the moment the panel is opened (a hidden panel measures 0x0) and on
-// window resize / orientation change.
-//
-// Storage model (three independent layers):
-//   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
-//   ct_profiles_v1            -> AU profiles: { profileId: { name, folder, avatars } }
-//   ct_chatmap_v1             -> { chatId: profileId } (which AU a chat uses)
-//
-// Avatars live on disk under this extension's own folder:
-//   .../third-party/character-thoughts/avatars/<profile.folder>/<file>
-// You drop the image files in by hand; the menu just maps name -> filename.
-// No avatar set / file missing -> coloured initial circle (never breaks).
-
-import {
-    eventSource,
-    event_types,
-} from '../../../../script.js';
-
-const THOUGHTS_KEY = 'ct_thoughts_v1';
-const PROFILES_KEY = 'ct_profiles_v1';
-const CARDMAP_KEY = 'ct_cardmap_v1';
-const DEBUG = false;
-
-function log(...args) {
-    if (!DEBUG) return;
-    console.log('[Character Thoughts]', ...args);
-}
-
-/* ----------------------------- context helpers ----------------------------- */
-
-function getContextSafe() {
-    return window.SillyTavern?.getContext?.() || null;
-}
-
-function getCurrentChatId() {
-    const context = getContextSafe();
-    try {
-        return context?.getCurrentChatId?.() ?? context?.chatId ?? null;
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to read chat id:', error);
-        return null;
-    }
-}
-
-function getCurrentCardName() {
-    const context = getContextSafe();
-    try {
-        if (context?.characters && context?.characterId != null) {
-            const card = context.characters[context.characterId];
-            if (card?.name) return card.name;
-        }
-        if (context?.name2) return context.name2;
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to read card name:', error);
-    }
-    return 'default';
-}
-
-/* ------------------------------ small utilities ----------------------------- */
-
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-}
-
-function stripHtml(value) {
-    const div = document.createElement('div');
-    div.innerHTML = value ?? '';
-    return div.textContent || div.innerText || '';
-}
-
-function normalizeText(text) {
-    return stripHtml(text)
-        .replace(/\r/g, '')
-        .replace(/\u00A0/g, ' ')
-        .replace(/\u3164/g, ' ')
-        .replace(/ㅤ/g, ' ')
-        .replace(/[ \t]+/g, ' ')
-        .replace(/[ \t]+\n/g, '\n')
-        .replace(/\n[ \t]+/g, '\n')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
-}
-
-function slugify(text) {
-    const slug = String(text ?? '')
-        .toLowerCase()
-        .replace(/[^a-z0-9а-яё]+/gi, '-')
-        .replace(/^-+|-+$/g, '');
-    return slug || 'profile';
-}
-
-function initial(name) {
-    const trimmed = String(name ?? '').trim();
-    return trimmed ? trimmed[0].toUpperCase() : '?';
-}
-
-// Stable hue from a name so each character gets a consistent fallback colour.
-function hueForName(name) {
-    let hash = 0;
-    const text = String(name ?? '');
-    for (let i = 0; i < text.length; i++) {
-        hash = (hash * 31 + text.charCodeAt(i)) % 360;
-    }
-    return hash;
-}
-
-/* -------------------------------- storage ---------------------------------- */
-
-function getThoughtsKey() {
-    const chatId = getCurrentChatId();
-    return chatId ? `${THOUGHTS_KEY}::${chatId}` : THOUGHTS_KEY;
-}
-
-function getThoughts() {
-    try {
-        const raw = localStorage.getItem(getThoughtsKey());
-        return raw ? JSON.parse(raw) : {};
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to read thoughts:', error);
-        return {};
-    }
-}
-
-function saveThoughts(map) {
-    try {
-        localStorage.setItem(getThoughtsKey(), JSON.stringify(map, null, 2));
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to save thoughts:', error);
-    }
-}
-
-function getProfiles() {
-    try {
-        const raw = localStorage.getItem(PROFILES_KEY);
-        return raw ? JSON.parse(raw) : {};
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to read profiles:', error);
-        return {};
-    }
-}
-
-function saveProfiles(profiles) {
-    try {
-        localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles, null, 2));
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to save profiles:', error);
-    }
-}
-
-function getCardMap() {
-    try {
-        const raw = localStorage.getItem(CARDMAP_KEY);
-        return raw ? JSON.parse(raw) : {};
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to read card map:', error);
-        return {};
-    }
-}
-
-function saveCardMap(map) {
-    try {
-        localStorage.setItem(CARDMAP_KEY, JSON.stringify(map));
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to save card map:', error);
-    }
-}
-
-function ensureProfile(profileId, displayName) {
-    const profiles = getProfiles();
-    if (!profiles[profileId]) {
-        profiles[profileId] = {
-            name: displayName || profileId,
-            folder: slugify(displayName || profileId),
-            avatars: {},
-            uploads: {},
-        };
-        saveProfiles(profiles);
-    }
-    return profiles[profileId];
-}
-
-// Which AU profile is active — keyed by the ST CARD, not the chat.
-// All chats of the same card share one profile (so switching chats never
-// spawns duplicates). A card seen for the first time gets its own profile
-// created automatically once. The menu can override the binding per card.
-function getActiveProfileId() {
-    const cardName = getCurrentCardName();
-    const map = getCardMap();
-
-    if (map[cardName]) {
-        return map[cardName];
-    }
-
-    // First time we see this card: create its profile and bind it.
-    const profileId = `card:${cardName}`;
-    ensureProfile(profileId, cardName);
-    map[cardName] = profileId;
-    saveCardMap(map);
-    return profileId;
-}
-
-function getActiveProfile() {
-    const profiles = getProfiles();
-    return profiles[getActiveProfileId()] || { name: 'default', folder: 'default', avatars: {} };
-}
-
-// Manual override: remember the chosen profile FOR THIS CARD, so it sticks
-// across all of the card's chats.
-function setActiveProfileId(profileId) {
-    const cardName = getCurrentCardName();
-    const map = getCardMap();
-    map[cardName] = profileId;
-    saveCardMap(map);
-}
-
-/* --------------------------------- parsing --------------------------------- */
-
-function extractTagBlock(text, tag) {
-    // Match the tag in the RAW text first. normalizeText() runs text through the
-    // DOM (stripHtml), which turns <char_thoughts> into a real, empty element and
-    // drops the literal tag — so the block must be captured before normalizing.
-    // Only the inner content is normalized afterwards.
-    const raw = String(text ?? '');
-    const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i');
-    const match = raw.match(regex);
-    return match ? normalizeText(match[1]).trim() : null;
-}
-
-function stripBlockPrefix(text) {
-    return String(text ?? '').replace(/^\s*(?:Thoughts|Mood)\s*=\s*/i, '').trim();
-}
-
-// Splits "Name1: text ; Name2: text" into segments.
-// A new character starts ONLY at the start of the block or after a ';' that is
-// followed by a short "Name:". A ';' sitting inside a sentence (no "Name:"
-// after it) stays part of the current character's text — this is what stops a
-// single multi-clause thought from being split into a phantom character.
-function parseNamedSegments(block) {
-    const text = stripBlockPrefix(block);
-    if (!text) return [];
-
-    // A new character starts at the block start or after ';', followed by a
-    // short "Name:". Dots are allowed in names (e.g. "Trafalgar D. Water Law");
-    // !?… stay excluded so a whole exclamatory sentence can't be read as a name.
-    const headerRegex = /(?:^|;)\s*([^:;\n!?…]{1,40}?)\s*:\s*/g;
-    const headers = [];
-    let match;
-
-    while ((match = headerRegex.exec(text)) !== null) {
-        headers.push({
-            name: match[1].trim(),
-            start: match.index,
-            contentStart: headerRegex.lastIndex,
-        });
-    }
-
-    const results = [];
-    for (let i = 0; i < headers.length; i++) {
-        const current = headers[i];
-        const next = headers[i + 1];
-        const end = next ? next.start : text.length;
-        const raw = text.slice(current.contentStart, end).trim();
-        const clean = raw.replace(/\*/g, '').replace(/\s*;\s*$/g, '').trim();
-        if (current.name) {
-            results.push({ name: current.name, text: clean });
-        }
-    }
-
-    return results;
-}
-
-function parseMessage(messageText) {
-    const thoughtsBlock = extractTagBlock(messageText, 'char_thoughts');
-    const moodBlock = extractTagBlock(messageText, 'char_mood');
-
-    if (!thoughtsBlock && !moodBlock) {
-        return null;
-    }
-
-    const thoughts = thoughtsBlock ? parseNamedSegments(thoughtsBlock) : [];
-    const moods = moodBlock ? parseNamedSegments(moodBlock) : [];
-
-    const map = {};
-
-    for (const item of thoughts) {
-        map[item.name] = { name: item.name, thought: item.text, mood: '' };
-    }
-    for (const item of moods) {
-        if (map[item.name]) {
-            map[item.name].mood = item.text;
-        } else {
-            map[item.name] = { name: item.name, thought: '', mood: item.text };
-        }
-    }
-
-    return Object.keys(map).length ? map : null;
-}
-
-function updateFromText(messageText, showAlerts = false) {
-    const map = parseMessage(messageText);
-
-    if (!map) {
-        if (showAlerts) {
-            alert('No <char_thoughts> or <char_mood> block found in the last message.');
-        }
-        return false;
-    }
-
-    saveThoughts(map);
-    renderPanel();
-    return true;
-}
-
-/* ----------------------- reading the last message --------------------------- */
-
-function getLastAssistantMessageText() {
-    const context = getContextSafe();
-    const chat = context?.chat;
-
-    if (Array.isArray(chat)) {
-        for (let i = chat.length - 1; i >= 0; i--) {
-            const message = chat[i];
-            if (message && !message.is_user && message.mes) {
-                return message.mes;
-            }
-        }
-    }
-
-    const nodes = Array.from(document.querySelectorAll('#chat .mes:not([is_user="true"])'));
-    if (nodes.length) {
-        const last = nodes[nodes.length - 1];
-        return last.innerText || last.textContent || '';
-    }
-
-    return '';
-}
-
-/* --------------------------------- avatars --------------------------------- */
-
-/* ----------------------------- avatar upload -------------------------------- */
-
-// Store/clear an uploaded avatar (a data URL) for a character in the active
-// profile. Returns false if the browser refused to save (storage full).
-function setUploadedAvatar(name, dataUrl) {
-    const profiles = getProfiles();
-    const id = getActiveProfileId();
-    if (!profiles[id]) return false;
-
-    profiles[id].uploads = profiles[id].uploads || {};
-    if (dataUrl) {
-        profiles[id].uploads[name] = dataUrl;
-    } else {
-        delete profiles[id].uploads[name];
-    }
-
-    try {
-        localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
-        return true;
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to save avatar (storage full?):', error);
-        return false;
-    }
-}
-
-// Open a native file picker for one image, then hand the File to a callback.
-function pickImageFile(onPicked) {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.style.display = 'none';
-    input.addEventListener('change', () => {
-        const file = input.files && input.files[0];
-        if (file) onPicked(file);
-        input.remove();
-    });
-    document.body.appendChild(input);
-    input.click();
-}
-
-// Square cropper: drag to pan, slider to zoom. Saves a downscaled JPEG data URL.
-function openImageCropper(file, onSave) {
-    const reader = new FileReader();
-    reader.onerror = () => alert('Could not read that image file.');
-    reader.onload = () => buildCropper(reader.result, onSave);
-    reader.readAsDataURL(file);
-}
-
-function buildCropper(dataUrl, onSave) {
-    const WIN = Math.min(260, Math.max(180, window.innerWidth - 80)); // on-screen crop square
-    const OUT = 256;   // saved avatar resolution
-    const MAX_ZOOM = 4;
-
-    const overlay = document.createElement('div');
-    overlay.className = 'ct-crop-overlay';
-    overlay.innerHTML = `
-        <div class="ct-crop-box">
-            <div class="ct-crop-title">Adjust avatar</div>
-            <div class="ct-crop-window" style="width:${WIN}px;height:${WIN}px">
-                <img class="ct-crop-img" alt="" draggable="false">
-            </div>
-            <input class="ct-crop-zoom" type="range" min="1" max="${MAX_ZOOM}" step="0.01" value="1">
-            <div class="ct-crop-actions">
-                <button class="ct-crop-cancel" type="button">Cancel</button>
-                <button class="ct-crop-save" type="button">Save</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(overlay);
-
-    const img = overlay.querySelector('.ct-crop-img');
-    const win = overlay.querySelector('.ct-crop-window');
-    const zoom = overlay.querySelector('.ct-crop-zoom');
-
-    win.style.touchAction = 'none';
-
-    let nw = 0;
-    let nh = 0;
-    let cover = 1;  // scale at which the image just covers the window
-    let k = 1;      // current scale
-    let tx = 0;
-    let ty = 0;
-
-    function clampPan() {
-        const dispW = nw * k;
-        const dispH = nh * k;
-        tx = Math.min(0, Math.max(WIN - dispW, tx));
-        ty = Math.min(0, Math.max(WIN - dispH, ty));
-    }
-    function apply() {
-        img.style.width = `${nw * k}px`;
-        img.style.height = `${nh * k}px`;
-        img.style.left = `${tx}px`;
-        img.style.top = `${ty}px`;
-    }
-
-    img.onload = () => {
-        nw = img.naturalWidth;
-        nh = img.naturalHeight;
-        cover = Math.max(WIN / nw, WIN / nh);
-        k = cover;
-        tx = (WIN - nw * k) / 2;
-        ty = (WIN - nh * k) / 2;
-        apply();
+// Context Tracker — a tiny always-on-screen badge with live chat context stats.
+// Shows: last message id (SillyTavern's own 0-based id), number of visible
+// (non-hidden) messages, token usage. A progress bar and a pulsing dot signal
+// when it's time to summarize.
+
+(function () {
+    'use strict';
+
+    const MODULE = 'context_tracker';
+    const EDGE_MARGIN = 14;      // mandatory margin from screen edges, px
+    const SCALE_MIN = 0.75;
+    const SCALE_MAX = 2.5;
+
+    const DEFAULTS = {
+        enabled: true,
+        interval: 100,           // summary threshold (visible messages); 0 = off
+        showTokens: true,
+        showProgress: true,
+        tokenLimit: 0,           // manual max-context for display; 0 = auto-detect
+        lang: 'en',              // 'en' | 'ru'
+        scale: 1,
+        pos: null,               // {x, y}
     };
-    img.onerror = () => { alert('Could not load that image.'); overlay.remove(); };
-    img.src = dataUrl;
 
-    zoom.addEventListener('input', () => {
-        const newK = cover * parseFloat(zoom.value);
-        const cx = WIN / 2;
-        const cy = WIN / 2;
-        // keep the window centre anchored to the same source point while zooming
-        const srcX = (cx - tx) / k;
-        const srcY = (cy - ty) / k;
-        k = newK;
-        tx = cx - srcX * k;
-        ty = cy - srcY * k;
-        clampPan();
-        apply();
-    });
+    const I18N = {
+        en: {
+            start: 'start',
+            msgs: 'messages',
+            due: 'Time to summarize',
+            s_show: 'Show badge',
+            s_tokens: 'Show tokens',
+            s_progress: 'Progress bar & "due" dot',
+            s_interval: 'Summary interval (messages in context, 0 = off):',
+            s_token_limit: 'Token limit for display (0 = auto-detect):',
+            s_lang: 'Language:',
+            s_reset: 'Reset badge position & size',
+        },
+        ru: {
+            start: 'начало',
+            msgs: 'сообщений',
+            due: 'Пора делать пересказ',
+            s_show: 'Показывать бейдж',
+            s_tokens: 'Показывать токены',
+            s_progress: 'Полоска прогресса и точка «пора»',
+            s_interval: 'Интервал пересказа (сообщений в контексте, 0 — выкл.):',
+            s_token_limit: 'Лимит токенов для отображения (0 — автоопределение):',
+            s_lang: 'Язык:',
+            s_reset: 'Сбросить позицию и размер бейджа',
+        },
+    };
 
-    let dragging = false;
-    let startX = 0;
-    let startY = 0;
-    let baseTx = 0;
-    let baseTy = 0;
+    let ctx = null;
+    let settings = null;
+    let badge = null;
+    let lastSignature = '';
+    let tokenCacheKey = '';
+    let tokenText = '—';
+    let tokenOver = false;
+    let pollTimer = null;
 
-    win.addEventListener('pointerdown', (event) => {
-        dragging = true;
-        startX = event.clientX;
-        startY = event.clientY;
-        baseTx = tx;
-        baseTy = ty;
-        try { win.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
-    });
-    win.addEventListener('pointermove', (event) => {
-        if (!dragging) return;
-        tx = baseTx + (event.clientX - startX);
-        ty = baseTy + (event.clientY - startY);
-        clampPan();
-        apply();
-    });
-    function endDrag(event) {
-        dragging = false;
-        try { win.releasePointerCapture(event.pointerId); } catch (e) { /* ignore */ }
+    // ---------- utils ----------
+
+    function t(key) {
+        const lang = I18N[settings.lang] ? settings.lang : 'en';
+        return I18N[lang][key] ?? I18N.en[key] ?? key;
     }
-    win.addEventListener('pointerup', endDrag);
-    win.addEventListener('pointercancel', endDrag);
 
-    function close() { overlay.remove(); }
-
-    overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) close();
-    });
-    overlay.querySelector('.ct-crop-cancel').addEventListener('click', close);
-
-    overlay.querySelector('.ct-crop-save').addEventListener('click', () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = OUT;
-        canvas.height = OUT;
-        const ctx = canvas.getContext('2d');
-
-        // Map the visible window back to source (natural) pixels.
-        const srcSize = WIN / k;
-        const srcX = -tx / k;
-        const srcY = -ty / k;
-
-        let out;
-        try {
-            ctx.drawImage(img, srcX, srcY, srcSize, srcSize, 0, 0, OUT, OUT);
-            out = canvas.toDataURL('image/jpeg', 0.85);
-        } catch (error) {
-            console.error('[Character Thoughts] Crop failed:', error);
-            alert('Could not process that image.');
-            return;
+    function getSettings() {
+        const store = ctx.extensionSettings;
+        if (!store[MODULE]) store[MODULE] = {};
+        for (const k of Object.keys(DEFAULTS)) {
+            if (store[MODULE][k] === undefined) store[MODULE][k] = DEFAULTS[k];
         }
-        close();
-        onSave(out);
-    });
-}
+        return store[MODULE];
+    }
 
-function resolveAvatarSrc(name) {
-    const profile = getActiveProfile();
+    function save() {
+        ctx.saveSettingsDebounced();
+    }
 
-    // 1) An image uploaded through the menu (stored as a data URL).
-    const uploaded = profile?.uploads?.[name];
-    if (uploaded) return uploaded;
-
-    // 2) A filename the user dropped into the profile's avatars folder.
-    const file = profile?.avatars?.[name];
-    if (file) {
-        const folder = encodeURIComponent(profile.folder || 'default');
-        const encodedFile = encodeURIComponent(file);
-        try {
-            return new URL(`avatars/${folder}/${encodedFile}`, import.meta.url).href;
-        } catch (error) {
-            console.error('[Character Thoughts] Failed to build avatar URL:', error);
-            return null;
+    function fmtTokens(n) {
+        if (n === null || n === undefined || Number.isNaN(n)) return '—';
+        if (n >= 1000) {
+            const v = n / 1000;
+            return (v >= 100 ? Math.round(v) : v.toFixed(1)).toString() + 'k';
         }
+        return String(n);
     }
 
-    // 3) Nothing set -> caller draws the coloured initial circle.
-    return null;
-}
-
-/* --------------------------------- rendering -------------------------------- */
-
-function renderThoughtsList(body) {
-    const map = getThoughts();
-    const names = Object.keys(map);
-
-    if (names.length === 0) {
-        body.innerHTML = '<div class="ct-empty">No thoughts captured yet. Play a turn, or use “Parse last”.</div>';
-        return;
+    function readIntFrom(id) {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        const v = parseInt(el.value ?? el.textContent, 10);
+        return Number.isFinite(v) && v > 0 ? v : null;
     }
 
-    body.innerHTML = names.map((name) => {
-        const item = map[name];
-        const url = resolveAvatarSrc(name);
-        const hue = hueForName(name);
+    function getMaxContext() {
+        // manual limit from settings wins — needed when context size is set
+        // to "unlimited" and auto-detection returns nonsense
+        const manual = Number(settings.tokenLimit);
+        if (Number.isFinite(manual) && manual > 0) return manual;
+        // chat completion APIs (OpenAI/Claude/Gemini etc.) keep their max context
+        // in a separate slider — check it first when that API is active
+        const mainApi = ctx.mainApi ?? document.getElementById('main_api')?.value;
+        if (mainApi === 'openai') {
+            const v = readIntFrom('openai_max_context');
+            if (v) return v;
+        }
+        if (typeof ctx.maxContext === 'number' && ctx.maxContext > 0) return ctx.maxContext;
+        return readIntFrom('openai_max_context')
+            ?? readIntFrom('max_context')
+            ?? readIntFrom('max_context_counter');
+    }
 
-        const avatar = url
-            ? `<div class="ct-avatar" data-name="${escapeHtml(name)}"><img src="${escapeHtml(url)}" alt=""></div>`
-            : `<div class="ct-avatar ct-avatar-fallback" data-name="${escapeHtml(name)}" style="background:hsl(${hue} 48% 42%)">${escapeHtml(initial(name))}</div>`;
+    async function countTokens(text) {
+        try {
+            if (typeof ctx.getTokenCountAsync === 'function') {
+                return await ctx.getTokenCountAsync(text);
+            }
+            if (typeof ctx.getTokenCount === 'function') {
+                return ctx.getTokenCount(text);
+            }
+        } catch (e) {
+            console.warn(`[${MODULE}] token count failed, using estimate`, e);
+        }
+        return Math.round(text.length / 3.2); // rough fallback
+    }
 
-        const mood = item.mood
-            ? `<div class="ct-mood">${escapeHtml(item.mood)}</div>`
-            : '';
+    // ---------- stats ----------
 
-        const thought = item.thought
-            ? `<div class="ct-thought">${escapeHtml(item.thought)}</div>`
-            : '<div class="ct-thought ct-thought-empty">—</div>';
+    function collect() {
+        const chat = Array.isArray(ctx.chat) ? ctx.chat : [];
+        const total = chat.length;
+        const visible = chat.filter(m => m && !m.is_system);
+        // first non-hidden message = oldest message still in context.
+        // Exact Tavern mesid (0-based): hid 0–295 → firstVisibleId = 296
+        const firstIdx = chat.findIndex(m => m && !m.is_system);
+        const firstVisibleId = firstIdx >= 0 ? firstIdx : null;
+        return { chat, total, firstVisibleId, visible };
+    }
 
-        return `
-            <div class="ct-card">
-                ${avatar}
-                <div class="ct-content">
-                    <div class="ct-name">${escapeHtml(name)}</div>
-                    ${mood}
-                    ${thought}
-                </div>
+    function signatureOf(s) {
+        const lastLen = s.total ? String((s.chat[s.total - 1].mes || '').length) : '0';
+        return `${s.total}:${s.visible.length}:${s.firstVisibleId}:${lastLen}`;
+    }
+
+    // ---------- badge ----------
+
+    function buildBadge() {
+        badge = document.createElement('div');
+        badge.id = 'ctx-tracker-badge';
+        badge.innerHTML = `
+            <div class="ctt-accent"></div>
+            <div class="ctt-header">
+                <span class="ctt-title">context</span>
+                <div class="ctt-dot"></div>
             </div>
+            <div class="ctt-stats">
+                <div class="ctt-stat"><span class="ctt-label" data-ctti="start"></span><span class="ctt-val" data-ctt="first">—</span></div>
+                <div class="ctt-stat"><span class="ctt-label" data-ctti="msgs"></span><span class="ctt-val" data-ctt="visible">—</span></div>
+                <div class="ctt-stat ctt-tokens-block"><span class="ctt-tokens" data-ctt="tokens">—</span></div>
+            </div>
+            <div class="ctt-progress"><div class="ctt-progress-fill"></div></div>
+            <div class="ctt-resize" title="Resize"></div>
         `;
-    }).join('');
+        document.body.appendChild(badge);
+        refreshI18n();
+        applyScale();
+        initDrag();
+        initResize();
+        applyPosition();
+    }
 
-    // Swap a broken/missing image for the coloured initial circle.
-    body.querySelectorAll('.ct-avatar img').forEach((img) => {
-        img.addEventListener('error', () => {
-            const wrap = img.parentElement;
-            const name = wrap.getAttribute('data-name') || '';
-            wrap.classList.add('ct-avatar-fallback');
-            wrap.style.background = `hsl(${hueForName(name)} 48% 42%)`;
-            wrap.textContent = initial(name);
+    function refreshI18n() {
+        document.querySelectorAll('[data-ctti]').forEach(el => {
+            el.textContent = t(el.getAttribute('data-ctti'));
         });
-    });
-}
+        const dot = badge?.querySelector('.ctt-dot');
+        if (dot) dot.title = t('due');
+    }
 
-function renderSettings(container) {
-    const profiles = getProfiles();
-    const activeId = getActiveProfileId();
-    const active = profiles[activeId] || { name: 'default', folder: 'default', avatars: {} };
+    function applyScale() {
+        const s = Math.min(Math.max(Number(settings.scale) || 1, SCALE_MIN), SCALE_MAX);
+        settings.scale = s;
+        badge.style.transform = `scale(${s})`;
+    }
 
-    // Character names worth listing: those seen in this chat + any already mapped.
-    const known = new Set([
-        ...Object.keys(getThoughts()),
-        ...Object.keys(active.avatars || {}),
-    ]);
-    const knownNames = Array.from(known);
+    function applyPosition() {
+        if (!badge) return;
+        let x, y;
+        if (settings.pos && Number.isFinite(settings.pos.x) && Number.isFinite(settings.pos.y)) {
+            ({ x, y } = settings.pos);
+        } else {
+            const r = badge.getBoundingClientRect();
+            x = window.innerWidth - r.width - EDGE_MARGIN - 10;
+            y = 70;
+        }
+        const c = clampPos(x, y);
+        badge.style.left = c.x + 'px';
+        badge.style.top = c.y + 'px';
+    }
 
-    const profileOptions = Object.keys(profiles).map((id) => {
-        const selected = id === activeId ? ' selected' : '';
-        return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(profiles[id].name || id)}</option>`;
-    }).join('');
+    function clampPos(x, y) {
+        // getBoundingClientRect respects the current scale
+        const r = badge.getBoundingClientRect();
+        const w = r.width || 140;
+        const h = r.height || 80;
+        const maxX = Math.max(EDGE_MARGIN, window.innerWidth - w - EDGE_MARGIN);
+        const maxY = Math.max(EDGE_MARGIN, window.innerHeight - h - EDGE_MARGIN);
+        return {
+            x: Math.min(Math.max(x, EDGE_MARGIN), maxX),
+            y: Math.min(Math.max(y, EDGE_MARGIN), maxY),
+        };
+    }
 
-    const charRows = knownNames.length
-        ? knownNames.map((name) => {
-            const src = resolveAvatarSrc(name);
-            const hue = hueForName(name);
-            const preview = src
-                ? `<div class="ct-char-prev"><img src="${escapeHtml(src)}" alt=""></div>`
-                : `<div class="ct-char-prev ct-avatar-fallback" style="background:hsl(${hue} 48% 42%)">${escapeHtml(initial(name))}</div>`;
-            const hasUpload = !!active.uploads?.[name];
-            const clearBtn = `<button class="ct-char-clear${hasUpload ? '' : ' ct-hidden'}" type="button" data-name="${escapeHtml(name)}" title="Remove uploaded image">✕</button>`;
-            return `
-                <div class="ct-char-row">
-                    ${preview}
-                    <span class="ct-char-name">${escapeHtml(name)}</span>
-                    <div class="ct-char-btns">
-                        <button class="ct-char-upload" type="button" data-name="${escapeHtml(name)}">Upload</button>
-                        ${clearBtn}
+    function initDrag() {
+        let dragging = false;
+        let startX = 0, startY = 0, origX = 0, origY = 0;
+
+        badge.addEventListener('pointerdown', (e) => {
+            if (e.target.closest('.ctt-resize')) return; // grip has its own handler
+            dragging = true;
+            badge.setPointerCapture(e.pointerId);
+            badge.classList.add('ctt-dragging');
+            startX = e.clientX;
+            startY = e.clientY;
+            const r = badge.getBoundingClientRect();
+            origX = r.left;
+            origY = r.top;
+            e.preventDefault();
+        });
+
+        badge.addEventListener('pointermove', (e) => {
+            if (!dragging) return;
+            const c = clampPos(origX + (e.clientX - startX), origY + (e.clientY - startY));
+            badge.style.left = c.x + 'px';
+            badge.style.top = c.y + 'px';
+        });
+
+        const stop = (e) => {
+            if (!dragging) return;
+            dragging = false;
+            badge.classList.remove('ctt-dragging');
+            try { badge.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+            const r = badge.getBoundingClientRect();
+            settings.pos = { x: r.left, y: r.top };
+            save();
+        };
+        badge.addEventListener('pointerup', stop);
+        badge.addEventListener('pointercancel', stop);
+
+        window.addEventListener('resize', () => {
+            if (badge) applyPosition();
+        });
+    }
+
+    function initResize() {
+        const grip = badge.querySelector('.ctt-resize');
+        let resizing = false;
+        let startX = 0, startY = 0, startScale = 1;
+
+        grip.addEventListener('pointerdown', (e) => {
+            resizing = true;
+            grip.setPointerCapture(e.pointerId);
+            badge.classList.add('ctt-resizing');
+            startX = e.clientX;
+            startY = e.clientY;
+            startScale = settings.scale || 1;
+            e.stopPropagation();
+            e.preventDefault();
+        });
+
+        grip.addEventListener('pointermove', (e) => {
+            if (!resizing) return;
+            // diagonal drag = uniform scaling, proportions stay intact
+            const delta = ((e.clientX - startX) + (e.clientY - startY)) / 2;
+            settings.scale = startScale + delta / 140;
+            applyScale();
+        });
+
+        const stop = (e) => {
+            if (!resizing) return;
+            resizing = false;
+            badge.classList.remove('ctt-resizing');
+            try { grip.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+            // after scaling, make sure the badge is still fully on screen
+            const r = badge.getBoundingClientRect();
+            const c = clampPos(r.left, r.top);
+            badge.style.left = c.x + 'px';
+            badge.style.top = c.y + 'px';
+            settings.pos = { x: c.x, y: c.y };
+            save();
+        };
+        grip.addEventListener('pointerup', stop);
+        grip.addEventListener('pointercancel', stop);
+    }
+
+    function setText(key, value) {
+        const el = badge.querySelector(`[data-ctt="${key}"]`);
+        if (el) el.textContent = value;
+    }
+
+    // ---------- update ----------
+
+    async function update(force = false) {
+        if (!badge) return;
+
+        badge.style.display = settings.enabled ? '' : 'none';
+        if (!settings.enabled) return;
+
+        const s = collect();
+        const sig = signatureOf(s);
+        if (!force && sig === lastSignature) return;
+        lastSignature = sig;
+
+        setText('first', s.firstVisibleId === null ? '—' : String(s.firstVisibleId));
+        setText('visible', String(s.visible.length));
+
+        // tokens — visible messages only, cached per signature
+        const tokensBlock = badge.querySelector('.ctt-tokens-block');
+        tokensBlock.style.display = settings.showTokens ? '' : 'none';
+        if (settings.showTokens) {
+            if (sig !== tokenCacheKey) {
+                tokenCacheKey = sig;
+                const text = s.visible.map(m => m.mes || '').join('\n');
+                const count = await countTokens(text);
+                // the chat may have changed during await — don't clobber fresh data
+                if (tokenCacheKey === sig) {
+                    const max = getMaxContext();
+                    tokenText = fmtTokens(count) + (max ? ' / ' + fmtTokens(max) : '');
+                    tokenOver = Boolean(max && count > max);
+                }
+            }
+            setText('tokens', tokenText);
+            badge.querySelector('.ctt-tokens')?.classList.toggle('ctt-over', tokenOver);
+        }
+        // context full (tokens over the limit) drives the pulse alarm
+        badge.classList.toggle('ctt-full', settings.showTokens && tokenOver);
+
+        // progress toward the summary threshold + "due" dot
+        const bar = badge.querySelector('.ctt-progress');
+        const fill = badge.querySelector('.ctt-progress-fill');
+        const dot = badge.querySelector('.ctt-dot');
+        const interval = Number(settings.interval) || 0;
+
+        if (interval > 0 && settings.showProgress) {
+            bar.style.display = '';
+            const ratio = Math.min(s.visible.length / interval, 1);
+            fill.style.width = (ratio * 100).toFixed(1) + '%';
+            dot.classList.toggle('ctt-due', s.visible.length >= interval);
+        } else {
+            bar.style.display = 'none';
+            dot.classList.remove('ctt-due');
+        }
+    }
+
+    function scheduleUpdate() {
+        clearTimeout(scheduleUpdate._t);
+        scheduleUpdate._t = setTimeout(() => update(), 150);
+    }
+
+    // ---------- settings panel ----------
+
+    function addSettingsPanel() {
+        const html = `
+        <div class="context-tracker-settings">
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>Context Tracker</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="ctt_enabled">
+                        <span data-ctti="s_show"></span>
+                    </label>
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="ctt_show_tokens">
+                        <span data-ctti="s_tokens"></span>
+                    </label>
+                    <label class="checkbox_label">
+                        <input type="checkbox" id="ctt_show_progress">
+                        <span data-ctti="s_progress"></span>
+                    </label>
+                    <label for="ctt_interval" data-ctti="s_interval"></label>
+                    <input type="number" id="ctt_interval" class="text_pole" min="0" step="10">
+                    <label for="ctt_token_limit" data-ctti="s_token_limit"></label>
+                    <input type="number" id="ctt_token_limit" class="text_pole" min="0" step="1000">
+                    <label for="ctt_lang" data-ctti="s_lang"></label>
+                    <select id="ctt_lang" class="text_pole">
+                        <option value="en">English</option>
+                        <option value="ru">Русский</option>
+                    </select>
+                    <div class="menu_button" id="ctt_reset_pos">
+                        <span data-ctti="s_reset"></span>
                     </div>
                 </div>
-            `;
-        }).join('')
-        : '<div class="ct-empty">No characters yet. They appear here after a turn with thoughts.</div>';
-
-    container.innerHTML = `
-        <div class="ct-set-row">
-            <label>Profile (AU)</label>
-            <div class="ct-set-inline">
-                <select id="ct-profile-select">${profileOptions}</select>
-                <button id="ct-profile-new" type="button" title="New profile">＋</button>
-                <button id="ct-profile-delete" type="button" title="Delete this profile">🗑</button>
             </div>
-        </div>
-        <div class="ct-set-row">
-            <label>Profile name</label>
-            <input id="ct-profile-name" type="text" value="${escapeHtml(active.name || '')}">
-        </div>
-        <div class="ct-set-row">
-            <label>Avatar folder</label>
-            <input id="ct-profile-folder" type="text" spellcheck="false" value="${escapeHtml(active.folder || '')}">
-        </div>
-        <div class="ct-hint">Click <b>Upload</b> on a character to pick and crop an image. Saved avatars stay with this profile.</div>
-        <div class="ct-set-divider"></div>
-        <div class="ct-set-label">Avatars by character</div>
-        <div id="ct-char-list">${charRows}</div>
-    `;
+        </div>`;
 
-    container.querySelector('#ct-profile-select')?.addEventListener('change', (event) => {
-        setActiveProfileId(event.target.value);
-        renderSettings(container);
-        renderPanel();
-    });
-
-    container.querySelector('#ct-profile-new')?.addEventListener('click', () => {
-        const name = (prompt('New profile (AU) name:') || '').trim();
-        if (!name) return;
-        const all = getProfiles();
-        // If a profile with this name already exists, switch to it instead of
-        // creating a duplicate.
-        const existingId = Object.keys(all).find(
-            (id) => (all[id].name || '').toLowerCase() === name.toLowerCase()
-        );
-        const id = existingId || `manual:${slugify(name)}:${Date.now()}`;
-        if (!existingId) ensureProfile(id, name);
-        setActiveProfileId(id);
-        renderSettings(container);
-        renderPanel();
-    });
-
-    container.querySelector('#ct-profile-delete')?.addEventListener('click', () => {
-        const all = getProfiles();
-        const ids = Object.keys(all);
-        if (ids.length <= 1) {
-            alert('Can’t delete the only profile.');
+        const target = document.getElementById('extensions_settings2')
+            || document.getElementById('extensions_settings');
+        if (!target) {
+            console.warn(`[${MODULE}] extensions settings container not found`);
             return;
         }
-        const label = all[activeId]?.name || activeId;
-        if (!confirm(`Delete profile “${label}”?\nThe avatar image files on disk are NOT removed.`)) return;
-        delete all[activeId];
-        saveProfiles(all);
-        // Point this chat at another existing profile so it isn't recreated.
-        setActiveProfileId(Object.keys(all)[0]);
-        renderSettings(container);
-        renderPanel();
-    });
+        target.insertAdjacentHTML('beforeend', html);
 
-    container.querySelector('#ct-profile-name')?.addEventListener('change', (event) => {
-        const all = getProfiles();
-        if (all[activeId]) {
-            all[activeId].name = event.target.value.trim() || all[activeId].name;
-            saveProfiles(all);
-            renderSettings(container);
-        }
-    });
+        const $enabled = document.getElementById('ctt_enabled');
+        const $tokens = document.getElementById('ctt_show_tokens');
+        const $progress = document.getElementById('ctt_show_progress');
+        const $interval = document.getElementById('ctt_interval');
+        const $tokenLimit = document.getElementById('ctt_token_limit');
+        const $lang = document.getElementById('ctt_lang');
+        const $reset = document.getElementById('ctt_reset_pos');
 
-    container.querySelector('#ct-profile-folder')?.addEventListener('change', (event) => {
-        const all = getProfiles();
-        if (all[activeId]) {
-            all[activeId].folder = slugify(event.target.value);
-            saveProfiles(all);
-            renderSettings(container);
-            renderPanel();
-        }
-    });
+        $enabled.checked = settings.enabled;
+        $tokens.checked = settings.showTokens;
+        $progress.checked = settings.showProgress;
+        $interval.value = settings.interval;
+        $tokenLimit.value = settings.tokenLimit;
+        $lang.value = I18N[settings.lang] ? settings.lang : 'en';
 
-    container.querySelectorAll('.ct-char-upload').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const name = btn.getAttribute('data-name');
-            pickImageFile((file) => {
-                openImageCropper(file, (dataUrl) => {
-                    const ok = setUploadedAvatar(name, dataUrl);
-                    if (!ok) {
-                        alert('Not enough browser storage to save this avatar. Try removing some saved images.');
-                        return;
-                    }
-                    renderSettings(container);
-                    renderPanel();
-                });
-            });
+        $enabled.addEventListener('change', () => { settings.enabled = $enabled.checked; save(); update(true); });
+        $tokens.addEventListener('change', () => { settings.showTokens = $tokens.checked; save(); update(true); });
+        $progress.addEventListener('change', () => { settings.showProgress = $progress.checked; save(); update(true); });
+        $interval.addEventListener('input', () => {
+            const v = parseInt($interval.value, 10);
+            settings.interval = Number.isFinite(v) && v >= 0 ? v : 0;
+            save();
+            update(true);
         });
-    });
-
-    container.querySelectorAll('.ct-char-clear').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const name = btn.getAttribute('data-name');
-            setUploadedAvatar(name, null);
-            renderSettings(container);
-            renderPanel();
+        $tokenLimit.addEventListener('input', () => {
+            const v = parseInt($tokenLimit.value, 10);
+            settings.tokenLimit = Number.isFinite(v) && v >= 0 ? v : 0;
+            tokenCacheKey = ''; // force the denominator to refresh
+            save();
+            update(true);
         });
-    });
-}
-
-function renderPanel() {
-    const body = document.querySelector('#ct-body');
-    if (body && body.style.display !== 'none') {
-        renderThoughtsList(body);
-    }
-    const settings = document.querySelector('#ct-settings');
-    if (settings && settings.style.display !== 'none') {
-        renderSettings(settings);
-    }
-}
-
-/* ----------------------------------- UI ------------------------------------ */
-
-function showView(view) {
-    const body = document.querySelector('#ct-body');
-    const settings = document.querySelector('#ct-settings');
-    if (!body || !settings) return;
-
-    if (view === 'settings') {
-        body.style.display = 'none';
-        settings.style.display = 'block';
-        renderSettings(settings);
-    } else {
-        settings.style.display = 'none';
-        body.style.display = 'block';
-        renderThoughtsList(body);
-    }
-}
-
-/* ------------------------------- draggable UI ------------------------------- */
-
-function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-}
-
-// Keep a dragged element on-screen. The top margin ensures the draggable
-// header can never hide under a floating browser toolbar (tablet/mobile).
-// IMPORTANT: DRAG_TOP_MARGIN must match --ct-top-gap in style.css — the CSS
-// value protects the DEFAULT (never-dragged) position, this one protects
-// dragged/restored positions. Change them together.
-const DRAG_EDGE = 8;
-const DRAG_TOP_MARGIN = 100;
-
-// Visible viewport size. visualViewport is more honest than innerWidth/Height
-// on tablets/phones where browser chrome expands and collapses.
-function viewportSize() {
-    const vv = window.visualViewport;
-    if (vv && vv.width && vv.height) {
-        return { w: vv.width, h: vv.height };
-    }
-    return { w: window.innerWidth, h: window.innerHeight };
-}
-
-function clampToViewport(el, left, top) {
-    const w = el.offsetWidth || 0;
-    const h = el.offsetHeight || 0;
-    const vp = viewportSize();
-    const maxLeft = Math.max(DRAG_EDGE, vp.w - w - DRAG_EDGE);
-    const maxTop = Math.max(DRAG_TOP_MARGIN, vp.h - h - DRAG_EDGE);
-    return {
-        left: clamp(left, DRAG_EDGE, maxLeft),
-        top: clamp(top, DRAG_TOP_MARGIN, maxTop),
-    };
-}
-
-function applyPosition(el, left, top) {
-    // Inline !important beats the fixed-position rules (and the mobile media
-    // query) in style.css, so a dragged element actually moves.
-    el.style.setProperty('left', `${left}px`, 'important');
-    el.style.setProperty('top', `${top}px`, 'important');
-    el.style.setProperty('right', 'auto', 'important');
-    el.style.setProperty('bottom', 'auto', 'important');
-}
-
-function restorePosition(el, storageKey) {
-    try {
-        const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-        if (!saved || !Number.isFinite(saved.left) || !Number.isFinite(saved.top)) return;
-        // A hidden element measures 0x0, which makes the clamp meaningless.
-        // Skip now; the caller re-runs this at the moment the element is shown.
-        if (!el.offsetWidth && !el.offsetHeight) return;
-        const p = clampToViewport(el, saved.left, saved.top);
-        applyPosition(el, p.left, p.top);
-    } catch (error) {
-        console.error('[Character Thoughts] Failed to restore position:', error);
-    }
-}
-
-// Drag `el` by `handle`; remembers position. clickAction (if any) fires only on
-// a genuine click, never at the end of a drag, and inner <button>s in the
-// handle keep working.
-function makeDraggable(el, { storageKey, handle = el, clickAction = null } = {}) {
-    restorePosition(el, storageKey);
-    handle.style.touchAction = 'none';
-
-    let dragging = false;
-    let moved = false;
-    let startX = 0;
-    let startY = 0;
-    let baseLeft = 0;
-    let baseTop = 0;
-
-    handle.addEventListener('pointerdown', (event) => {
-        const innerButton = event.target.closest('button');
-        if (innerButton && innerButton !== el) return;
-        if (event.button != null && event.button !== 0) return;
-
-        dragging = true;
-        moved = false;
-        const rect = el.getBoundingClientRect();
-        baseLeft = rect.left;
-        baseTop = rect.top;
-        startX = event.clientX;
-        startY = event.clientY;
-        try { handle.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
-    });
-
-    handle.addEventListener('pointermove', (event) => {
-        if (!dragging) return;
-        const dx = event.clientX - startX;
-        const dy = event.clientY - startY;
-        if (!moved && Math.hypot(dx, dy) < 5) return;
-        moved = true;
-        const p = clampToViewport(el, baseLeft + dx, baseTop + dy);
-        applyPosition(el, p.left, p.top);
-    });
-
-    function finish(event) {
-        if (!dragging) return;
-        dragging = false;
-        try { handle.releasePointerCapture(event.pointerId); } catch (e) { /* ignore */ }
-        if (moved) {
-            const rect = el.getBoundingClientRect();
-            try {
-                localStorage.setItem(storageKey, JSON.stringify({ left: rect.left, top: rect.top }));
-            } catch (e) { /* ignore */ }
-        }
-    }
-    handle.addEventListener('pointerup', finish);
-    handle.addEventListener('pointercancel', finish);
-
-    if (clickAction) {
-        el.addEventListener('click', (event) => {
-            if (moved) { moved = false; return; }
-            clickAction(event);
+        $lang.addEventListener('change', () => {
+            settings.lang = $lang.value;
+            save();
+            refreshI18n();
         });
-    }
-}
+        $reset.addEventListener('click', () => {
+            settings.pos = null;
+            settings.scale = 1;
+            applyScale();
+            applyPosition();
+            save();
+        });
 
-function createUi() {
-    if (document.querySelector('#ct-panel')) return;
-
-    const button = document.createElement('button');
-    button.id = 'ct-button';
-    button.textContent = 'Thoughts';
-    document.body.appendChild(button);
-
-    const panel = document.createElement('div');
-    panel.id = 'ct-panel';
-    panel.style.display = 'none';
-    panel.innerHTML = `
-        <div id="ct-header">
-            <div id="ct-title">Character Thoughts</div>
-            <div id="ct-header-actions">
-                <button id="ct-refresh" type="button" title="Refresh from last message">⟳</button>
-                <button id="ct-gear" type="button" title="Settings">⚙</button>
-                <button id="ct-close" type="button" title="Close">×</button>
-            </div>
-        </div>
-        <div id="ct-body"></div>
-        <div id="ct-settings" style="display:none"></div>
-    `;
-    document.body.appendChild(panel);
-
-    let settingsOpen = false;
-
-    function toggleButton() {
-        const visible = panel.style.display !== 'none';
-        panel.style.display = visible ? 'none' : 'flex';
-        if (!visible) {
-            settingsOpen = false;
-            showView('list');
-            // The panel is measurable only now that it's shown — re-clamp any
-            // saved position so it can't sit under a floating browser toolbar.
-            restorePosition(panel, 'ct_panel_pos');
-        }
+        refreshI18n();
     }
 
-    button.addEventListener('click', toggleButton);
-    makeDraggable(panel, { storageKey: 'ct_panel_pos', handle: panel.querySelector('#ct-header') });
+    // ---------- events ----------
 
-    // Rotating the tablet / resizing the window changes what "on-screen" means:
-    // re-clamp an open panel so it never ends up half off the viewport.
-    window.addEventListener('resize', () => {
-        if (panel.style.display !== 'none') {
-            restorePosition(panel, 'ct_panel_pos');
+    function bindEvents() {
+        const et = ctx.eventTypes || {};
+        const names = [
+            et.CHAT_CHANGED,
+            et.MESSAGE_SENT,
+            et.MESSAGE_RECEIVED,
+            et.MESSAGE_DELETED,
+            et.MESSAGE_EDITED,
+            et.MESSAGE_SWIPED,
+            et.MESSAGE_UPDATED,
+            et.GENERATION_ENDED,
+        ].filter(Boolean);
+        for (const name of names) {
+            ctx.eventSource.on(name, scheduleUpdate);
         }
+
+        // safety net: /hide doesn't always emit events — a cheap signature
+        // check every 2 s catches anything the events missed
+        pollTimer = setInterval(() => update(), 2000);
+    }
+
+    // ---------- init ----------
+
+    jQuery(async () => {
+        try {
+            ctx = SillyTavern.getContext();
+        } catch (e) {
+            console.error(`[${MODULE}] SillyTavern context is not available`, e);
+            return;
+        }
+        settings = getSettings();
+        buildBadge();
+        addSettingsPanel();
+        bindEvents();
+        update(true);
     });
-
-    panel.querySelector('#ct-close').addEventListener('click', () => {
-        panel.style.display = 'none';
-    });
-
-    panel.querySelector('#ct-gear').addEventListener('click', () => {
-        settingsOpen = !settingsOpen;
-        showView(settingsOpen ? 'settings' : 'list');
-    });
-
-    panel.querySelector('#ct-refresh').addEventListener('click', () => {
-        const btn = panel.querySelector('#ct-refresh');
-        // Restart the spin animation on every click for tactile feedback.
-        btn.classList.remove('ct-spinning');
-        void btn.offsetWidth;
-        btn.classList.add('ct-spinning');
-
-        const text = getLastAssistantMessageText();
-        if (text) updateFromText(text, false);
-    });
-}
-
-/* --------------------------------- events ---------------------------------- */
-
-function handleIncomingMessage(data) {
-    let text = '';
-    if (typeof data === 'string') text = data;
-    else if (data?.mes) text = data.mes;
-    else if (data?.message?.mes) text = data.message.mes;
-
-    if (!text) text = getLastAssistantMessageText();
-    if (!text) return;
-
-    updateFromText(text, false);
-}
-
-function handleChatChanged() {
-    renderPanel();
-}
-
-function init() {
-    createUi();
-    renderPanel();
-
-    eventSource.on(event_types.MESSAGE_RECEIVED, handleIncomingMessage);
-    eventSource.on(event_types.CHAT_CHANGED, handleChatChanged);
-
-    log('Character Thoughts loaded.');
-}
-
-setTimeout(init, 1000);
+})();
