@@ -1,20 +1,24 @@
-// Character Thoughts v1.1
+// Character Thoughts v1.2
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
-// v1.1: the panel is resizable by a corner grip (bottom-right).
-//   This is a REAL resize (width/height change), not the proportional
+// v1.2: HEIGHT-only resize. The width stays fixed at the value from style.css
+//   (the whole extension set shares it), so the grip is a thin strip along the
+//   BOTTOM EDGE with a vertical cursor instead of a corner square: a corner
+//   grip promises two axes and invites mis-taps on a tablet.
+// v1.1: the panel became resizable.
+//   This is a REAL resize (height in px), not the proportional
 //   transform: scale() used by the Context Tracker badge: the badge has three
 //   numbers and nothing to scroll, while this panel has a scrollable list, so
 //   growing it must show MORE text rather than bigger text.
-//   - Size is saved per browser (ct_panel_size) and re-clamped to the visible
+//   - Height is saved per browser (ct_panel_size) and re-clamped to the visible
 //     viewport whenever the panel is opened or the window/orientation changes,
-//     so a size saved on a big screen can never leave the panel unusable on a
+//     so a height saved on a big screen can never leave the panel unusable on a
 //     small one.
 //   - While resizing, a dragged panel (one with an explicit left/top) is
-//     re-clamped live, so growing it cannot push it off the right edge.
-//   - Under 600px wide the grip is hidden and saved sizes are ignored: there
-//     the panel is full-width by design (see the media query in style.css).
-//   - The grip's CSS is injected from here on purpose, so updating to v1.1
+//     re-clamped live, so growing it cannot push it off the bottom edge.
+//   - Under 600px wide the grip is hidden and saved heights are ignored: there
+//     the panel is full-screen by design (see the media query in style.css).
+//   - The grip's CSS is injected from here on purpose, so updating
 //     touches index.js only and style.css can stay as it is.
 // v1.0: the top gap for floating browser toolbars is now enforced in CSS too
 // (--ct-top-gap), not only during drags; DRAG_TOP_MARGIN raised to match it;
@@ -680,7 +684,7 @@ function renderSettings(container) {
         <div class="ct-hint">Click <b>Upload</b> on a character to pick and crop an image. Saved avatars stay with this profile.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Panel</div>
-        <div class="ct-hint">Drag the corner grip at the bottom-right to resize the panel. <b>Reset size</b> puts it back to the default.</div>
+        <div class="ct-hint">Drag the strip along the bottom edge to make the panel taller or shorter. <b>Reset size</b> puts it back to the default.</div>
         <button id="ct-size-reset" type="button" class="ct-char-clear">Reset size</button>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Avatars by character</div>
@@ -929,41 +933,35 @@ function makeDraggable(el, { storageKey, handle = el, clickAction = null } = {})
 
 /* ------------------------------- resizable UI ------------------------------- */
 
-// Real resize (width/height), not transform: scale() — the panel body scrolls,
-// so a bigger panel must show MORE text, not bigger text.
+// Real resize (height in px), not transform: scale() — the panel body scrolls,
+// so a taller panel must show MORE text, not bigger text. The width is left to
+// style.css on purpose: all three extensions share it.
 const SIZE_KEY = 'ct_panel_size';
-const PANEL_MIN_W = 260;
 const PANEL_MIN_H = 200;
 const COMPACT_WIDTH = 600;  // must match the media query in style.css
 
-// Under this width style.css takes the panel full-screen; a saved size would
+// Under this width style.css takes the panel full-screen; a saved height would
 // fight that layout, so resizing is disabled there entirely.
 function isCompactViewport() {
     return viewportSize().w <= COMPACT_WIDTH;
 }
 
-function clampSize(width, height) {
+function clampHeight(height) {
     const vp = viewportSize();
-    const maxW = Math.max(PANEL_MIN_W, vp.w - DRAG_EDGE * 2);
     const maxH = Math.max(PANEL_MIN_H, vp.h - DRAG_TOP_MARGIN - DRAG_EDGE);
-    return {
-        w: clamp(width, PANEL_MIN_W, maxW),
-        h: clamp(height, PANEL_MIN_H, maxH),
-    };
+    return clamp(height, PANEL_MIN_H, maxH);
 }
 
-function applySize(el, width, height) {
-    el.style.setProperty('width', `${width}px`, 'important');
+function applyHeight(el, height) {
     el.style.setProperty('height', `${height}px`, 'important');
 }
 
 function clearSize(el) {
-    el.style.removeProperty('width');
     el.style.removeProperty('height');
 }
 
-// Re-applied on open and on resize/orientation change, so a size saved on a
-// large screen can never leave the panel bigger than the current viewport.
+// Re-applied on open and on resize/orientation change, so a height saved on a
+// large screen can never leave the panel taller than the current viewport.
 function restoreSize(el, storageKey) {
     if (isCompactViewport()) {
         clearSize(el);
@@ -971,11 +969,10 @@ function restoreSize(el, storageKey) {
     }
     try {
         const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-        if (!saved || !Number.isFinite(saved.w) || !Number.isFinite(saved.h)) return;
-        const s = clampSize(saved.w, saved.h);
-        applySize(el, s.w, s.h);
+        if (!saved || !Number.isFinite(saved.h)) return;
+        applyHeight(el, clampHeight(saved.h));
     } catch (error) {
-        console.error('[Character Thoughts] Failed to restore size:', error);
+        console.error('[Character Thoughts] Failed to restore height:', error);
     }
 }
 
@@ -1000,29 +997,34 @@ function ensureResizeStyles() {
     const style = document.createElement('style');
     style.id = 'ct-resize-styles';
     style.textContent = `
+        /* A strip along the bottom edge: height-only resize, so the grip
+           must not look like a two-axis corner. The inner bar is the visible
+           handle; the strip around it is a bigger touch target. */
         #ct-resize {
             position: absolute;
+            left: 0;
             right: 0;
             bottom: 0;
-            width: 18px;
-            height: 18px;
+            height: 14px;
             z-index: 3;
-            cursor: nwse-resize;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: ns-resize;
             touch-action: none;
-            opacity: 0.3;
-            transition: opacity 0.2s ease;
-            background: linear-gradient(135deg,
-                transparent 0 55%,
-                currentColor 55% 60%,
-                transparent 60% 70%,
-                currentColor 70% 75%,
-                transparent 75% 85%,
-                currentColor 85% 90%,
-                transparent 90%);
         }
-        #ct-panel:hover #ct-resize,
-        #ct-panel.ct-resizing #ct-resize {
-            opacity: 0.75;
+        #ct-resize::before {
+            content: '';
+            width: 42px;
+            height: 3px;
+            border-radius: 3px;
+            background: currentColor;
+            opacity: 0.25;
+            transition: opacity 0.2s ease;
+        }
+        #ct-panel:hover #ct-resize::before,
+        #ct-panel.ct-resizing #ct-resize::before {
+            opacity: 0.6;
         }
         #ct-panel.ct-resizing {
             user-select: none;
@@ -1034,17 +1036,16 @@ function ensureResizeStyles() {
     document.head.appendChild(style);
 }
 
-// Resize `el` by dragging `grip`; remembers the size. A panel that has been
-// dragged (explicit left/top) is re-clamped live, so growing it cannot push it
-// off the right or bottom edge.
+// Resize `el` vertically by dragging `grip`; remembers the height. Horizontal
+// pointer movement is ignored entirely — the width belongs to style.css. A
+// panel that has been dragged (explicit left/top) is re-clamped live, so
+// growing it cannot push it off the bottom edge.
 function makeResizable(el, { storageKey, grip } = {}) {
     if (!grip) return;
     grip.style.touchAction = 'none';
 
     let resizing = false;
-    let startX = 0;
     let startY = 0;
-    let baseW = 0;
     let baseH = 0;
 
     grip.addEventListener('pointerdown', (event) => {
@@ -1052,10 +1053,7 @@ function makeResizable(el, { storageKey, grip } = {}) {
         if (isCompactViewport()) return;
 
         resizing = true;
-        const rect = el.getBoundingClientRect();
-        baseW = rect.width;
-        baseH = rect.height;
-        startX = event.clientX;
+        baseH = el.getBoundingClientRect().height;
         startY = event.clientY;
         el.classList.add('ct-resizing');
         try { grip.setPointerCapture(event.pointerId); } catch (e) { /* ignore */ }
@@ -1066,12 +1064,11 @@ function makeResizable(el, { storageKey, grip } = {}) {
 
     grip.addEventListener('pointermove', (event) => {
         if (!resizing) return;
-        const s = clampSize(baseW + (event.clientX - startX), baseH + (event.clientY - startY));
-        applySize(el, s.w, s.h);
+        applyHeight(el, clampHeight(baseH + (event.clientY - startY)));
 
         // Only a dragged panel is anchored by left/top; an untouched one is
-        // anchored to the right/bottom by CSS and stays on-screen by itself.
-        if (el.style.left) {
+        // anchored to the bottom by CSS and stays on-screen by itself.
+        if (el.style.top) {
             const rect = el.getBoundingClientRect();
             const p = clampToViewport(el, rect.left, rect.top);
             applyPosition(el, p.left, p.top);
@@ -1086,8 +1083,8 @@ function makeResizable(el, { storageKey, grip } = {}) {
 
         const rect = el.getBoundingClientRect();
         try {
-            localStorage.setItem(storageKey, JSON.stringify({ w: rect.width, h: rect.height }));
-            if (el.style.left) {
+            localStorage.setItem(storageKey, JSON.stringify({ h: rect.height }));
+            if (el.style.top) {
                 localStorage.setItem('ct_panel_pos', JSON.stringify({ left: rect.left, top: rect.top }));
             }
         } catch (e) { /* ignore */ }
@@ -1120,11 +1117,15 @@ function createUi() {
         </div>
         <div id="ct-body"></div>
         <div id="ct-settings" style="display:none"></div>
-        <div id="ct-resize" title="Resize"></div>
+        <div id="ct-resize" title="Drag to change height"></div>
     `;
     document.body.appendChild(panel);
 
-    // Size first: the position clamp depends on the panel's dimensions.
+    // Keep the last card clear of the grip strip.
+    const body = panel.querySelector('#ct-body');
+    if (body) body.style.paddingBottom = '18px';
+
+    // Height first: the position clamp depends on the panel's dimensions.
     restoreSize(panel, SIZE_KEY);
 
     let settingsOpen = false;
