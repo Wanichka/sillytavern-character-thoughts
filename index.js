@@ -40,6 +40,7 @@ import {
     eventSource,
     event_types,
 } from '../../../../script.js';
+import { isRoleplayDocked, registerRoleplayPanel } from './roleplay-tools-adapter.js';
 
 const THOUGHTS_KEY = 'ct_thoughts_v1';
 const PROFILES_KEY = 'ct_profiles_v1';
@@ -848,6 +849,7 @@ function clampToViewport(el, left, top) {
 }
 
 function applyPosition(el, left, top) {
+    if (isRoleplayDocked(el)) return;
     // Inline !important beats the fixed-position rules (and the mobile media
     // query) in style.css, so a dragged element actually moves.
     el.style.setProperty('left', `${left}px`, 'important');
@@ -857,6 +859,7 @@ function applyPosition(el, left, top) {
 }
 
 function restorePosition(el, storageKey) {
+    if (isRoleplayDocked(el)) return;
     try {
         const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
         if (!saved || !Number.isFinite(saved.left) || !Number.isFinite(saved.top)) return;
@@ -885,6 +888,7 @@ function makeDraggable(el, { storageKey, handle = el, clickAction = null } = {})
     let baseTop = 0;
 
     handle.addEventListener('pointerdown', (event) => {
+        if (isRoleplayDocked(el)) return;
         const innerButton = event.target.closest('button');
         if (innerButton && innerButton !== el) return;
         if (event.button != null && event.button !== 0) return;
@@ -953,6 +957,7 @@ function clampHeight(height) {
 }
 
 function applyHeight(el, height) {
+    if (isRoleplayDocked(el)) return;
     el.style.setProperty('height', `${height}px`, 'important');
 }
 
@@ -963,6 +968,7 @@ function clearSize(el) {
 // Re-applied on open and on resize/orientation change, so a height saved on a
 // large screen can never leave the panel taller than the current viewport.
 function restoreSize(el, storageKey) {
+    if (isRoleplayDocked(el)) return;
     if (isCompactViewport()) {
         clearSize(el);
         return;
@@ -1049,6 +1055,7 @@ function makeResizable(el, { storageKey, grip } = {}) {
     let baseH = 0;
 
     grip.addEventListener('pointerdown', (event) => {
+        if (isRoleplayDocked(el)) return;
         if (event.button != null && event.button !== 0) return;
         if (isCompactViewport()) return;
 
@@ -1175,6 +1182,19 @@ function createUi() {
 
         const text = getLastAssistantMessageText();
         if (text) updateFromText(text, false);
+    });
+
+    registerRoleplayPanel({
+        id: 'thoughts', title: 'Character Thoughts', minHeight: 160,
+        element: panel, launcher: button,
+        controls: panel.querySelector('#ct-header-actions'),
+        onShow: () => renderThoughtsList(body),
+        onRelease: () => {
+            if (panel.style.display !== 'none') {
+                restoreSize(panel, SIZE_KEY);
+                restorePosition(panel, 'ct_panel_pos');
+            }
+        },
     });
 }
 

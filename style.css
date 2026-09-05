@@ -409,3 +409,48 @@
         z-index: 2147483646 !important;
     }
 }
+
+/* Optional Roleplay Tools dock. Standalone rules above remain unchanged. */
+#rpt-shell #ct-panel[data-rpt-docked] {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+    display: flex;
+    flex-direction: column;
+    z-index: auto !important;
+    border: 0;
+    border-radius: 0;
+    transform: none !important;
+    backdrop-filter: none;
+}
+#rpt-shell #ct-panel[data-rpt-docked] #ct-header {
+    cursor: default;
+    touch-action: auto !important;
+    gap: 5px;
+    padding: 7px 8px;
+    flex-wrap: wrap;
+}
+#rpt-shell #ct-panel[data-rpt-docked] #ct-title {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: 15px;
+    color: var(--ct-accent);
+    flex: 1 1 120px;
+    min-width: 0;
+}
+#rpt-shell #ct-panel[data-rpt-docked] #ct-header-actions { margin-left: auto; gap: 4px; }
+#rpt-shell #ct-panel[data-rpt-docked] #ct-body,
+#rpt-shell #ct-panel[data-rpt-docked] #ct-settings {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    height: auto !important;
+    padding: 9px !important;
+}
+#rpt-shell #ct-panel[data-rpt-docked] #ct-close,
+#rpt-shell #ct-panel[data-rpt-docked] #ct-resize { display: none !important; }
+#rpt-shell .rpt-collapsed #ct-panel[data-rpt-docked] #ct-body,
+#rpt-shell .rpt-collapsed #ct-panel[data-rpt-docked] #ct-settings { display: none !important; }
