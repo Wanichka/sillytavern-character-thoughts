@@ -13,11 +13,5 @@ export function registerRoleplayPanel(descriptor) {
     };
     // Host first: connect now. Extension first: connect on the ready event.
     window.addEventListener('wani-roleplay-tools:ready', connect);
-    descriptor.launcher?.addEventListener('click', event => {
-        if (!isRoleplayDocked(descriptor.element)) return;
-        if (window.WaniRoleplayTools?.open(descriptor.id)) {
-            event.preventDefault(); event.stopImmediatePropagation();
-        }
-    }, true);
     connect();
 }
