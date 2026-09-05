@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "Wani",
-    "version": "1.2.1-beta.1",
-    "homePage": "https://github.com/Wanichka/sillytavern-thinking-tracker",
+    "version": "1.2.1",
+    "homePage": "https://github.com/Wanichka/sillytavern-character-thoughts",
     "auto_update": false
 }
