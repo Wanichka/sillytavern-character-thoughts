@@ -63,17 +63,17 @@ sillytavern-character-thoughts/
     └── law.png
 ```
 
-- Open the panel → ⚙ (settings). Pick or create a **profile**, set its **folder** name, then map each character to a filename (e.g. `law.png`).
+- Open the panel → ⚙ (settings). Pick an **Avatar set** or create one with **＋**. Use **✎** to rename it. The main screen shows only the set selector and the saved character list.
 - A profile is bound to the **card file**, so two cards named “Law” keep separate settings. All chats of one card share its selected profile. Groups have their own bindings. Use the profile dropdown to choose a different set; the choice is remembered for that card.
-- The folder field preserves spaces and letter case. It refers to a subfolder of this extension, not an arbitrary folder elsewhere on the computer. For example, with a per-user installation at `SillyTavern/data/default-user/extensions/sillytavern-character-thoughts/`, enter `medicine-au` for its `medicine-au/` subfolder. Create the folder on disk yourself and enter an exact filename, such as `law.png`, in each character's **File in folder** field. The older `avatars/<folder>/<file>` layout is tried automatically if the direct file fails to load. If both exist, the direct folder wins. Paths are relative to the loaded extension, so public and per-user installations both work.
+- For a disk image, click **📁** beside the character. Enter the folder name and exact image filename when prompted. Folder spelling and case are preserved. The folder applies to the entire set; the filename applies to this character. Cancelling either prompt saves nothing. Choosing a file replaces this character's uploaded image. For a per-user installation at `SillyTavern/data/default-user/extensions/sillytavern-character-thoughts/`, enter `medicine-au` for its `medicine-au/` subfolder. The folder must already exist. The older `avatars/<folder>/<file>` layout is tried if the direct file fails to load. If both exist, the direct folder wins. Paths are relative to the loaded extension, supporting public and per-user installations.
 - Alternatively, **Upload** picks and crops an image. Uploaded images are saved in this browser, not written into the disk folder, and take priority over file mappings. The **✕** button clears the uploaded image so the folder file is used again.
 - Settings retain all characters found in thoughts/moods, including those in the history of a chat when you open it and those with previously saved avatars. The thoughts panel still shows the latest captured thoughts only.
 - **🗑** beside a character removes them from this profile's settings and clears their avatar assignments without changing messages or disk files. They remain hidden even if they appear again; **Restore removed characters** brings the names back, but does not restore cleared avatars. Names must match the spelling in the thoughts/mood blocks.
 - If no file is mapped (or the file is missing), the character shows a coloured initial circle instead.
 
-### Upgrading from 1.2
+### Upgrading to 1.3.1
 
-Old profiles and images are retained. The first time each card is opened, its old name-based profile is copied into an independent card-bound profile. If two cards previously shared a name, the extension cannot infer which images belong to which AU: open each card and choose the desired profile/folder once. Subsequent switches are automatic. Selecting the same profile for multiple cards explicitly shares its avatars and roster.
+Existing sets, images, rosters and card bindings are retained unchanged. New/unbound cards get an empty avatar set: old name-based profiles are no longer copied automatically. Old sets remain available for explicit selection. If 1.3.0 copied unwanted characters into a set, remove them individually with **🗑**; this update does not clean up any existing characters. Selecting the same set for multiple cards explicitly shares its avatars and roster. Creating a set with an already-used name asks for a different name instead of silently binding to someone else's set.
 
 Bindings use the card's avatar filename. Replacing or renaming that file outside the extension may require selecting its profile again.
 
@@ -86,7 +86,7 @@ Everything is stored in browser `localStorage`:
 | `ct_thoughts_v1::<chatId>` | parsed thoughts/mood for that chat | separate per chat |
 | `ct_profiles_v1` | profile name, folder, file mappings, uploads, saved and hidden character names | persists across chats |
 | `ct_cardmap_v2` | card filename/group ID → profile | persists |
-| `ct_cardmap_v1` | old name-based bindings | retained for migration |
+| `ct_cardmap_v1` | old name-based bindings | left untouched; no longer used for automatic copying |
 
 ## Buttons
 

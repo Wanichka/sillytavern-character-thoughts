@@ -1,4 +1,4 @@
-// Character Thoughts v1.3
+// Character Thoughts v1.3.1
 // Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
@@ -47,7 +47,6 @@ import { isRoleplayDocked, registerRoleplayPanel } from './roleplay-tools-adapte
 const THOUGHTS_KEY = 'ct_thoughts_v1';
 const PROFILES_KEY = 'ct_profiles_v1';
 const CARDMAP_KEY = 'ct_cardmap_v2';
-const LEGACY_CARDMAP_KEY = 'ct_cardmap_v1';
 const DEBUG = false;
 
 function log(...args) {
@@ -244,17 +243,15 @@ function getActiveProfileId() {
         return map[cardKey];
     }
 
-    // Copy the old name-based profile once. Keep the original available in the
-    // dropdown, and isolate same-named cards so later uploads cannot leak.
-    let legacyMap = {};
-    try { legacyMap = JSON.parse(localStorage.getItem(LEGACY_CARDMAP_KEY) || '{}') || {}; } catch { /* ignore */ }
-    const legacyId = legacyMap[cardName] || `card:${cardName}`;
-    const legacy = getContextSafe()?.groupId == null && !Object.hasOwn(map, cardKey) ? profiles[legacyId] : null;
+    // Never infer avatar ownership from a display name. Existing bindings and
+    // sets stay intact; an unbound card starts empty and can select an old set.
     const profileId = `bound:${cardKey}`;
     if (!profiles[profileId]) {
-        profiles[profileId] = legacy
-            ? JSON.parse(JSON.stringify(legacy))
-            : { name: cardName, folder: slugify(cardName), avatars: {}, uploads: {}, characters: [], hiddenCharacters: [] };
+        const usedNames = new Set(Object.values(profiles).map(profile => profile.name));
+        let displayName = cardName;
+        let suffix = 2;
+        while (usedNames.has(displayName)) displayName = `${cardName} (${suffix++})`;
+        profiles[profileId] = { name: displayName, folder: slugify(cardName), avatars: {}, uploads: {}, characters: [], hiddenCharacters: [] };
         if (!saveProfiles(profiles)) return null;
     }
     map[cardKey] = profileId;
@@ -735,8 +732,7 @@ function renderSettings(container) {
 
     const profileOptions = Object.keys(profiles).map((id) => {
         const selected = id === activeId ? ' selected' : '';
-        const cardLabel = id.startsWith('bound:card:') ? ` [${id.slice('bound:card:'.length)}]` : '';
-        return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml((profiles[id].name || id) + cardLabel)}</option>`;
+        return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(profiles[id].name || 'Unnamed set')}</option>`;
     }).join('');
 
     const charRows = knownNames.length
@@ -754,45 +750,35 @@ function renderSettings(container) {
                     <span class="ct-char-name">${escapeHtml(name)}</span>
                     <div class="ct-char-btns">
                         <button class="ct-char-upload" type="button" data-name="${escapeHtml(name)}">Upload</button>
+                        <button class="ct-char-folder" type="button" data-name="${escapeHtml(name)}" title="Use an image from a folder" aria-label="Use an image from a folder for ${escapeHtml(name)}">📁</button>
                         ${clearBtn}
                         <button class="ct-char-remove" type="button" data-name="${escapeHtml(name)}" title="Remove character from this profile">🗑</button>
                     </div>
-                    <label class="ct-char-file-label">File in folder
-                        <input class="ct-char-file" type="text" data-name="${escapeHtml(name)}" value="${escapeHtml(active.avatars?.[name] || '')}" placeholder="law.png" spellcheck="false">
-                    </label>
                 </div>
             `;
         }).join('')
         : '<div class="ct-empty">No characters yet. They appear here after a turn with thoughts.</div>';
 
     container.innerHTML = `
-        <div class="ct-hint">Card: <b>${escapeHtml(getCurrentCardName())}</b>. The selected profile is remembered for this card.</div>
+        <div class="ct-hint">Card: <b>${escapeHtml(getCurrentCardName())}</b>. The selected set is remembered for this card.</div>
         <div class="ct-set-row">
-            <label>Profile (AU)</label>
+            <label for="ct-profile-select">Avatar set</label>
             <div class="ct-set-inline">
                 <select id="ct-profile-select">${profileOptions}</select>
-                <button id="ct-profile-new" type="button" title="New profile">＋</button>
-                <button id="ct-profile-delete" type="button" title="Delete this profile">🗑</button>
+                <button id="ct-profile-new" type="button" title="New avatar set" aria-label="New avatar set">＋</button>
+                <button id="ct-profile-rename" type="button" title="Rename avatar set" aria-label="Rename avatar set">✎</button>
+                <button id="ct-profile-delete" type="button" title="Delete this avatar set">🗑</button>
             </div>
         </div>
-        <div class="ct-set-row">
-            <label>Profile name</label>
-            <input id="ct-profile-name" type="text" value="${escapeHtml(active.name || '')}">
-        </div>
-        <div class="ct-set-row">
-            <label>Avatar folder</label>
-            <input id="ct-profile-folder" type="text" spellcheck="false" value="${escapeHtml(active.folder || '')}">
-        </div>
-        <div class="ct-hint">Enter a folder name inside this extension, such as <b>medicine-au</b>, then each image filename below. Older folders inside <b>avatars/</b> also work. Keep the exact spelling. Create folders on disk, or use <b>Upload</b> to save a cropped image in this browser. Uploads take priority over files.</div>
-        <div class="ct-set-divider"></div>
-        <div class="ct-set-label">Panel</div>
-        <div class="ct-hint">Drag the strip along the bottom edge to make the panel taller or shorter. <b>Reset size</b> puts it back to the default.</div>
-        <button id="ct-size-reset" type="button" class="ct-char-clear">Reset size</button>
+        <div class="ct-hint">Upload a picture, or use 📁 for a file in an existing folder. Cards using the same set share its avatars and character list.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Avatars by character</div>
-        <div class="ct-hint">Characters from thoughts and moods stay in this profile, even after leaving the scene. Removing a character hides them here and clears their avatar; it does not change chat messages or delete files.</div>
+        <div class="ct-hint">Characters from thoughts and moods stay here, even without a picture or after leaving the scene.</div>
         ${(active.hiddenCharacters || []).length ? '<button id="ct-restore-characters" type="button" class="ct-char-clear">Restore removed characters</button>' : ''}
         <div id="ct-char-list">${charRows}</div>
+        <details class="ct-panel-options"><summary>Panel size</summary>
+            <button id="ct-size-reset" type="button" class="ct-char-clear">Reset size</button>
+        </details>
     `;
 
     container.querySelector('#ct-profile-select')?.addEventListener('change', (event) => {
@@ -803,16 +789,19 @@ function renderSettings(container) {
     });
 
     container.querySelector('#ct-profile-new')?.addEventListener('click', () => {
-        const name = (prompt('New profile (AU) name:') || '').trim();
+        const name = (prompt('New avatar set name:') || '').trim();
         if (!name) return;
         const all = getProfiles();
-        // If a profile with this name already exists, switch to it instead of
-        // creating a duplicate.
+        // Creating a set must never silently select another card's set.
         const existingId = Object.keys(all).find(
             (id) => (all[id].name || '').toLowerCase() === name.toLowerCase()
         );
-        const id = existingId || `manual:${slugify(name)}:${Date.now()}`;
-        if (!existingId) ensureProfile(id, name);
+        if (existingId) {
+            alert('A set with this name already exists. Choose another name, or select the existing set from the list to share it.');
+            return;
+        }
+        const id = `manual:${slugify(name)}:${Date.now()}`;
+        ensureProfile(id, name);
         setActiveProfileId(id);
         rememberChatCharacters();
         renderSettings(container);
@@ -841,28 +830,14 @@ function renderSettings(container) {
         renderPanel();
     });
 
-    container.querySelector('#ct-profile-name')?.addEventListener('change', (event) => {
+    container.querySelector('#ct-profile-rename')?.addEventListener('click', () => {
+        const name = (prompt('Avatar set name:', active.name || '') || '').trim();
+        if (!name) return;
         const all = getProfiles();
         if (all[activeId]) {
-            all[activeId].name = event.target.value.trim() || all[activeId].name;
+            all[activeId].name = name;
             saveProfiles(all);
             renderSettings(container);
-        }
-    });
-
-    container.querySelector('#ct-profile-folder')?.addEventListener('change', (event) => {
-        const all = getProfiles();
-        if (all[activeId]) {
-            const folder = event.target.value.trim();
-            if (!validPathPart(folder)) {
-                alert('Enter one folder name inside this extension, without slashes.');
-                event.target.value = all[activeId].folder;
-                return;
-            }
-            all[activeId].folder = folder;
-            saveProfiles(all);
-            renderSettings(container);
-            renderPanel();
         }
     });
 
@@ -898,20 +873,31 @@ function renderSettings(container) {
         });
     });
 
-    container.querySelectorAll('.ct-char-file').forEach(input => {
-        input.addEventListener('change', () => {
-            const file = input.value.trim();
-            if (file && !validPathPart(file)) {
+    container.querySelectorAll('.ct-char-folder').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const name = btn.dataset.name;
+            const folderInput = prompt('Folder inside this extension (for the whole set), for example medicine-au:', active.folder || '');
+            if (folderInput === null) return;
+            const folder = folderInput.trim();
+            if (!validPathPart(folder)) {
+                alert('Enter one folder name, without slashes or a full path.');
+                return;
+            }
+            const fileInput = prompt(`Image filename for ${name}, including its extension:`, active.avatars?.[name] || '');
+            if (fileInput === null) return;
+            const file = fileInput.trim();
+            if (!validPathPart(file)) {
                 alert('Enter a filename without slashes, for example law.png.');
-                input.value = active.avatars?.[input.dataset.name] || '';
                 return;
             }
             const all = getProfiles();
             if (!all[activeId]) return;
+            all[activeId].folder = folder;
             all[activeId].avatars ||= {};
-            if (file) all[activeId].avatars[input.dataset.name] = file;
-            else delete all[activeId].avatars[input.dataset.name];
-            saveProfiles(all);
+            all[activeId].avatars[name] = file;
+            // Explicitly choosing a folder image replaces this character's upload.
+            delete all[activeId].uploads?.[name];
+            if (!saveProfiles(all)) alert('Could not save changes. Browser storage may be full.');
             renderPanel();
         });
     });
