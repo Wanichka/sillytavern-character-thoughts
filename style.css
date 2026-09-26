@@ -291,6 +291,34 @@
     background: color-mix(in srgb, var(--ct-bg), #b3413a 50%);
 }
 
+.ct-char-row { flex-wrap: wrap; }
+.ct-char-name { flex: 1 1 80px; min-width: 0; }
+.ct-char-file-label {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--ct-text);
+}
+.ct-char-file {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid var(--ct-border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+}
+.ct-char-remove {
+    border: none;
+    border-radius: 8px;
+    padding: 6px 8px;
+    background: var(--ct-layer-2);
+    color: var(--ct-text);
+    cursor: pointer;
+}
+
 /* --- avatar cropper modal --- */
 .ct-crop-overlay {
     position: fixed;

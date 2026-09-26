@@ -1,4 +1,5 @@
-// Character Thoughts v1.2
+// Character Thoughts v1.3
+// Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
 // v1.2: HEIGHT-only resize. The width stays fixed at the value from style.css
@@ -28,11 +29,12 @@
 //
 // Storage model (three independent layers):
 //   ct_thoughts_v1::<chatId>  -> parsed thoughts/mood for THIS chat (resets per chat)
-//   ct_profiles_v1            -> AU profiles: { profileId: { name, folder, avatars } }
-//   ct_chatmap_v1             -> { chatId: profileId } (which AU a chat uses)
+//   ct_profiles_v1            -> AU profiles, avatars, uploads, saved/hidden names
+//   ct_cardmap_v2             -> { card filename or group ID: profileId }
 //
 // Avatars live on disk under this extension's own folder:
-//   .../third-party/character-thoughts/avatars/<profile.folder>/<file>
+//   .../sillytavern-character-thoughts/<profile.folder>/<file>
+// The older avatars/<profile.folder>/<file> layout is also supported.
 // You drop the image files in by hand; the menu just maps name -> filename.
 // No avatar set / file missing -> coloured initial circle (never breaks).
 
@@ -44,7 +46,8 @@ import { isRoleplayDocked, registerRoleplayPanel } from './roleplay-tools-adapte
 
 const THOUGHTS_KEY = 'ct_thoughts_v1';
 const PROFILES_KEY = 'ct_profiles_v1';
-const CARDMAP_KEY = 'ct_cardmap_v1';
+const CARDMAP_KEY = 'ct_cardmap_v2';
+const LEGACY_CARDMAP_KEY = 'ct_cardmap_v1';
 const DEBUG = false;
 
 function log(...args) {
@@ -71,6 +74,9 @@ function getCurrentChatId() {
 function getCurrentCardName() {
     const context = getContextSafe();
     try {
+        if (context?.groupId != null) {
+            return context.groups?.find(group => String(group.id) === String(context.groupId))?.name || 'Group';
+        }
         if (context?.characters && context?.characterId != null) {
             const card = context.characters[context.characterId];
             if (card?.name) return card.name;
@@ -80,6 +86,15 @@ function getCurrentCardName() {
         console.error('[Character Thoughts] Failed to read card name:', error);
     }
     return 'default';
+}
+
+// Card filenames identify distinct cards even when their display names match.
+// Groups have their own binding, independent of the current group speaker.
+function getCurrentCardKey() {
+    const context = getContextSafe();
+    if (context?.groupId != null) return `group:${context.groupId}`;
+    const card = context?.characters?.[context.characterId];
+    return card?.avatar ? `card:${card.avatar}` : null;
 }
 
 /* ------------------------------ small utilities ----------------------------- */
@@ -173,8 +188,10 @@ function getProfiles() {
 function saveProfiles(profiles) {
     try {
         localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles, null, 2));
+        return true;
     } catch (error) {
         console.error('[Character Thoughts] Failed to save profiles:', error);
+        return false;
     }
 }
 
@@ -204,6 +221,8 @@ function ensureProfile(profileId, displayName) {
             folder: slugify(displayName || profileId),
             avatars: {},
             uploads: {},
+            characters: [],
+            hiddenCharacters: [],
         };
         saveProfiles(profiles);
     }
@@ -215,33 +234,92 @@ function ensureProfile(profileId, displayName) {
 // spawns duplicates). A card seen for the first time gets its own profile
 // created automatically once. The menu can override the binding per card.
 function getActiveProfileId() {
+    const cardKey = getCurrentCardKey();
+    if (!cardKey) return null;
     const cardName = getCurrentCardName();
     const map = getCardMap();
+    const profiles = getProfiles();
 
-    if (map[cardName]) {
-        return map[cardName];
+    if (map[cardKey] && profiles[map[cardKey]]) {
+        return map[cardKey];
     }
 
-    // First time we see this card: create its profile and bind it.
-    const profileId = `card:${cardName}`;
-    ensureProfile(profileId, cardName);
-    map[cardName] = profileId;
+    // Copy the old name-based profile once. Keep the original available in the
+    // dropdown, and isolate same-named cards so later uploads cannot leak.
+    let legacyMap = {};
+    try { legacyMap = JSON.parse(localStorage.getItem(LEGACY_CARDMAP_KEY) || '{}') || {}; } catch { /* ignore */ }
+    const legacyId = legacyMap[cardName] || `card:${cardName}`;
+    const legacy = getContextSafe()?.groupId == null && !Object.hasOwn(map, cardKey) ? profiles[legacyId] : null;
+    const profileId = `bound:${cardKey}`;
+    if (!profiles[profileId]) {
+        profiles[profileId] = legacy
+            ? JSON.parse(JSON.stringify(legacy))
+            : { name: cardName, folder: slugify(cardName), avatars: {}, uploads: {}, characters: [], hiddenCharacters: [] };
+        if (!saveProfiles(profiles)) return null;
+    }
+    map[cardKey] = profileId;
     saveCardMap(map);
     return profileId;
 }
 
 function getActiveProfile() {
+    const id = getActiveProfileId();
     const profiles = getProfiles();
-    return profiles[getActiveProfileId()] || { name: 'default', folder: 'default', avatars: {} };
+    return profiles[id] || { name: 'default', folder: 'default', avatars: {} };
 }
 
 // Manual override: remember the chosen profile FOR THIS CARD, so it sticks
 // across all of the card's chats.
 function setActiveProfileId(profileId) {
-    const cardName = getCurrentCardName();
+    const cardKey = getCurrentCardKey();
+    if (!cardKey || !getProfiles()[profileId]) return;
     const map = getCardMap();
-    map[cardName] = profileId;
+    map[cardKey] = profileId;
     saveCardMap(map);
+}
+
+function rememberCharacters(names, profileId = getActiveProfileId()) {
+    const profiles = getProfiles();
+    const profile = profiles[profileId];
+    if (!profile) return;
+    const hidden = new Set(profile.hiddenCharacters || []);
+    const known = new Set([
+        ...(profile.characters || []),
+        ...Object.keys(profile.avatars || {}),
+        ...Object.keys(profile.uploads || {}),
+        ...names,
+    ].filter(name => !hidden.has(name)));
+    const characters = [...known];
+    if (JSON.stringify(characters) !== JSON.stringify(profile.characters)) {
+        profile.characters = characters;
+        saveProfiles(profiles);
+    }
+}
+
+// Backfill the roster from the open chat, including characters absent from the
+// latest turn. Hidden names stay hidden across refreshes and subsequent turns.
+function rememberChatCharacters() {
+    const names = new Set(Object.keys(getThoughts()));
+    for (const message of getContextSafe()?.chat || []) {
+        if (message?.is_user || message?.is_system) continue;
+        for (const name of Object.keys(parseMessage(message?.mes) || {})) names.add(name);
+    }
+    rememberCharacters([...names]);
+}
+
+function removeCharacter(name, profileId) {
+    const profiles = getProfiles();
+    const profile = profiles[profileId];
+    if (!profile) return false;
+    profile.characters = (profile.characters || []).filter(item => item !== name);
+    profile.hiddenCharacters = [...new Set([...(profile.hiddenCharacters || []), name])];
+    delete profile.avatars?.[name];
+    delete profile.uploads?.[name];
+    return saveProfiles(profiles);
+}
+
+function validPathPart(value) {
+    return !!value && value !== '.' && value !== '..' && !/[\\/\x00-\x1f]/.test(value);
 }
 
 /* --------------------------------- parsing --------------------------------- */
@@ -338,6 +416,7 @@ function updateFromText(messageText, showAlerts = false) {
     }
 
     saveThoughts(map);
+    rememberCharacters(Object.keys(map));
     renderPanel();
     return true;
 }
@@ -372,9 +451,8 @@ function getLastAssistantMessageText() {
 
 // Store/clear an uploaded avatar (a data URL) for a character in the active
 // profile. Returns false if the browser refused to save (storage full).
-function setUploadedAvatar(name, dataUrl) {
+function setUploadedAvatar(name, dataUrl, id = getActiveProfileId()) {
     const profiles = getProfiles();
-    const id = getActiveProfileId();
     if (!profiles[id]) return false;
 
     profiles[id].uploads = profiles[id].uploads || {};
@@ -550,12 +628,12 @@ function buildCropper(dataUrl, onSave) {
     });
 }
 
-function resolveAvatarSrc(name) {
+function resolveAvatarSources(name) {
     const profile = getActiveProfile();
 
     // 1) An image uploaded through the menu (stored as a data URL).
     const uploaded = profile?.uploads?.[name];
-    if (uploaded) return uploaded;
+    if (uploaded) return [uploaded];
 
     // 2) A filename the user dropped into the profile's avatars folder.
     const file = profile?.avatars?.[name];
@@ -563,15 +641,42 @@ function resolveAvatarSrc(name) {
         const folder = encodeURIComponent(profile.folder || 'default');
         const encodedFile = encodeURIComponent(file);
         try {
-            return new URL(`avatars/${folder}/${encodedFile}`, import.meta.url).href;
+            return [
+                new URL(`./${folder}/${encodedFile}`, import.meta.url).href,
+                new URL(`./avatars/${folder}/${encodedFile}`, import.meta.url).href,
+            ];
         } catch (error) {
             console.error('[Character Thoughts] Failed to build avatar URL:', error);
-            return null;
+            return [];
         }
     }
 
     // 3) Nothing set -> caller draws the coloured initial circle.
-    return null;
+    return [];
+}
+
+function resolveAvatarSrc(name) {
+    return resolveAvatarSources(name)[0] || null;
+}
+
+function installAvatarFallbacks(container, selector) {
+    container.querySelectorAll(selector).forEach(img => {
+        const wrap = img.parentElement;
+        const name = wrap.dataset.name || '';
+        // Capture URLs now so a card switch cannot redirect a pending error
+        // to the newly active card's folder.
+        const sources = resolveAvatarSources(name);
+        let next = 1;
+        img.addEventListener('error', () => {
+            if (next < sources.length) {
+                img.src = sources[next++];
+                return;
+            }
+            wrap.classList.add('ct-avatar-fallback');
+            wrap.style.background = `hsl(${hueForName(name)} 48% 42%)`;
+            wrap.textContent = initial(name);
+        });
+    });
 }
 
 /* --------------------------------- rendering -------------------------------- */
@@ -614,33 +719,24 @@ function renderThoughtsList(body) {
         `;
     }).join('');
 
-    // Swap a broken/missing image for the coloured initial circle.
-    body.querySelectorAll('.ct-avatar img').forEach((img) => {
-        img.addEventListener('error', () => {
-            const wrap = img.parentElement;
-            const name = wrap.getAttribute('data-name') || '';
-            wrap.classList.add('ct-avatar-fallback');
-            wrap.style.background = `hsl(${hueForName(name)} 48% 42%)`;
-            wrap.textContent = initial(name);
-        });
-    });
+    installAvatarFallbacks(body, '.ct-avatar img');
 }
 
 function renderSettings(container) {
-    const profiles = getProfiles();
     const activeId = getActiveProfileId();
-    const active = profiles[activeId] || { name: 'default', folder: 'default', avatars: {} };
-
-    // Character names worth listing: those seen in this chat + any already mapped.
-    const known = new Set([
-        ...Object.keys(getThoughts()),
-        ...Object.keys(active.avatars || {}),
-    ]);
-    const knownNames = Array.from(known);
+    if (!activeId) {
+        container.innerHTML = '<div class="ct-empty">Open a character or group to configure avatars.</div>';
+        return;
+    }
+    rememberCharacters(Object.keys(getThoughts()), activeId);
+    const profiles = getProfiles();
+    const active = profiles[activeId];
+    const knownNames = [...(active.characters || [])].sort((a, b) => a.localeCompare(b));
 
     const profileOptions = Object.keys(profiles).map((id) => {
         const selected = id === activeId ? ' selected' : '';
-        return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(profiles[id].name || id)}</option>`;
+        const cardLabel = id.startsWith('bound:card:') ? ` [${id.slice('bound:card:'.length)}]` : '';
+        return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml((profiles[id].name || id) + cardLabel)}</option>`;
     }).join('');
 
     const charRows = knownNames.length
@@ -648,7 +744,7 @@ function renderSettings(container) {
             const src = resolveAvatarSrc(name);
             const hue = hueForName(name);
             const preview = src
-                ? `<div class="ct-char-prev"><img src="${escapeHtml(src)}" alt=""></div>`
+                ? `<div class="ct-char-prev" data-name="${escapeHtml(name)}"><img src="${escapeHtml(src)}" alt=""></div>`
                 : `<div class="ct-char-prev ct-avatar-fallback" style="background:hsl(${hue} 48% 42%)">${escapeHtml(initial(name))}</div>`;
             const hasUpload = !!active.uploads?.[name];
             const clearBtn = `<button class="ct-char-clear${hasUpload ? '' : ' ct-hidden'}" type="button" data-name="${escapeHtml(name)}" title="Remove uploaded image">✕</button>`;
@@ -659,13 +755,18 @@ function renderSettings(container) {
                     <div class="ct-char-btns">
                         <button class="ct-char-upload" type="button" data-name="${escapeHtml(name)}">Upload</button>
                         ${clearBtn}
+                        <button class="ct-char-remove" type="button" data-name="${escapeHtml(name)}" title="Remove character from this profile">🗑</button>
                     </div>
+                    <label class="ct-char-file-label">File in folder
+                        <input class="ct-char-file" type="text" data-name="${escapeHtml(name)}" value="${escapeHtml(active.avatars?.[name] || '')}" placeholder="law.png" spellcheck="false">
+                    </label>
                 </div>
             `;
         }).join('')
         : '<div class="ct-empty">No characters yet. They appear here after a turn with thoughts.</div>';
 
     container.innerHTML = `
+        <div class="ct-hint">Card: <b>${escapeHtml(getCurrentCardName())}</b>. The selected profile is remembered for this card.</div>
         <div class="ct-set-row">
             <label>Profile (AU)</label>
             <div class="ct-set-inline">
@@ -682,18 +783,21 @@ function renderSettings(container) {
             <label>Avatar folder</label>
             <input id="ct-profile-folder" type="text" spellcheck="false" value="${escapeHtml(active.folder || '')}">
         </div>
-        <div class="ct-hint">Click <b>Upload</b> on a character to pick and crop an image. Saved avatars stay with this profile.</div>
+        <div class="ct-hint">Enter a folder name inside this extension, such as <b>medicine-au</b>, then each image filename below. Older folders inside <b>avatars/</b> also work. Keep the exact spelling. Create folders on disk, or use <b>Upload</b> to save a cropped image in this browser. Uploads take priority over files.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Panel</div>
         <div class="ct-hint">Drag the strip along the bottom edge to make the panel taller or shorter. <b>Reset size</b> puts it back to the default.</div>
         <button id="ct-size-reset" type="button" class="ct-char-clear">Reset size</button>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Avatars by character</div>
+        <div class="ct-hint">Characters from thoughts and moods stay in this profile, even after leaving the scene. Removing a character hides them here and clears their avatar; it does not change chat messages or delete files.</div>
+        ${(active.hiddenCharacters || []).length ? '<button id="ct-restore-characters" type="button" class="ct-char-clear">Restore removed characters</button>' : ''}
         <div id="ct-char-list">${charRows}</div>
     `;
 
     container.querySelector('#ct-profile-select')?.addEventListener('change', (event) => {
         setActiveProfileId(event.target.value);
+        rememberChatCharacters();
         renderSettings(container);
         renderPanel();
     });
@@ -710,6 +814,7 @@ function renderSettings(container) {
         const id = existingId || `manual:${slugify(name)}:${Date.now()}`;
         if (!existingId) ensureProfile(id, name);
         setActiveProfileId(id);
+        rememberChatCharacters();
         renderSettings(container);
         renderPanel();
     });
@@ -724,9 +829,14 @@ function renderSettings(container) {
         const label = all[activeId]?.name || activeId;
         if (!confirm(`Delete profile “${label}”?\nThe avatar image files on disk are NOT removed.`)) return;
         delete all[activeId];
-        saveProfiles(all);
-        // Point this chat at another existing profile so it isn't recreated.
-        setActiveProfileId(Object.keys(all)[0]);
+        if (!saveProfiles(all)) return;
+        // Remove every binding to the deleted profile. Other cards get their
+        // own fresh profile when next opened, never an arbitrary card's set.
+        const bindings = getCardMap();
+        for (const key of Object.keys(bindings)) {
+            if (bindings[key] === activeId) bindings[key] = null;
+        }
+        saveCardMap(bindings);
         renderSettings(container);
         renderPanel();
     });
@@ -743,7 +853,13 @@ function renderSettings(container) {
     container.querySelector('#ct-profile-folder')?.addEventListener('change', (event) => {
         const all = getProfiles();
         if (all[activeId]) {
-            all[activeId].folder = slugify(event.target.value);
+            const folder = event.target.value.trim();
+            if (!validPathPart(folder)) {
+                alert('Enter one folder name inside this extension, without slashes.');
+                event.target.value = all[activeId].folder;
+                return;
+            }
+            all[activeId].folder = folder;
             saveProfiles(all);
             renderSettings(container);
             renderPanel();
@@ -759,7 +875,7 @@ function renderSettings(container) {
             const name = btn.getAttribute('data-name');
             pickImageFile((file) => {
                 openImageCropper(file, (dataUrl) => {
-                    const ok = setUploadedAvatar(name, dataUrl);
+                    const ok = setUploadedAvatar(name, dataUrl, activeId);
                     if (!ok) {
                         alert('Not enough browser storage to save this avatar. Try removing some saved images.');
                         return;
@@ -773,14 +889,49 @@ function renderSettings(container) {
 
     container.querySelectorAll('.ct-char-clear').forEach((btn) => {
         // The size-reset button borrows this class for styling only.
-        if (btn.id === 'ct-size-reset') return;
+        if (!btn.hasAttribute('data-name')) return;
         btn.addEventListener('click', () => {
             const name = btn.getAttribute('data-name');
-            setUploadedAvatar(name, null);
+            setUploadedAvatar(name, null, activeId);
             renderSettings(container);
             renderPanel();
         });
     });
+
+    container.querySelectorAll('.ct-char-file').forEach(input => {
+        input.addEventListener('change', () => {
+            const file = input.value.trim();
+            if (file && !validPathPart(file)) {
+                alert('Enter a filename without slashes, for example law.png.');
+                input.value = active.avatars?.[input.dataset.name] || '';
+                return;
+            }
+            const all = getProfiles();
+            if (!all[activeId]) return;
+            all[activeId].avatars ||= {};
+            if (file) all[activeId].avatars[input.dataset.name] = file;
+            else delete all[activeId].avatars[input.dataset.name];
+            saveProfiles(all);
+            renderPanel();
+        });
+    });
+    container.querySelectorAll('.ct-char-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const name = btn.dataset.name;
+            if (!confirm(`Remove “${name}” from this profile and clear their avatar? Chat messages and image files will stay.`)) return;
+            if (!removeCharacter(name, activeId)) alert('Could not save changes. Browser storage may be full.');
+            renderPanel();
+        });
+    });
+    container.querySelector('#ct-restore-characters')?.addEventListener('click', () => {
+        const all = getProfiles();
+        if (!all[activeId]) return;
+        all[activeId].characters = [...new Set([...(all[activeId].characters || []), ...(all[activeId].hiddenCharacters || [])])];
+        all[activeId].hiddenCharacters = [];
+        saveProfiles(all);
+        renderPanel();
+    });
+    installAvatarFallbacks(container, '.ct-char-prev img');
 }
 
 function renderPanel() {
@@ -1213,11 +1364,13 @@ function handleIncomingMessage(data) {
 }
 
 function handleChatChanged() {
+    rememberChatCharacters();
     renderPanel();
 }
 
 function init() {
     createUi();
+    rememberChatCharacters();
     renderPanel();
 
     eventSource.on(event_types.MESSAGE_RECEIVED, handleIncomingMessage);
