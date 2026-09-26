@@ -33,7 +33,8 @@
 //   ct_cardmap_v2             -> { card filename or group ID: profileId }
 //
 // Avatars live on disk under this extension's own folder:
-//   .../third-party/character-thoughts/avatars/<profile.folder>/<file>
+//   .../sillytavern-character-thoughts/<profile.folder>/<file>
+// The older avatars/<profile.folder>/<file> layout is also supported.
 // You drop the image files in by hand; the menu just maps name -> filename.
 // No avatar set / file missing -> coloured initial circle (never breaks).
 
@@ -627,12 +628,12 @@ function buildCropper(dataUrl, onSave) {
     });
 }
 
-function resolveAvatarSrc(name) {
+function resolveAvatarSources(name) {
     const profile = getActiveProfile();
 
     // 1) An image uploaded through the menu (stored as a data URL).
     const uploaded = profile?.uploads?.[name];
-    if (uploaded) return uploaded;
+    if (uploaded) return [uploaded];
 
     // 2) A filename the user dropped into the profile's avatars folder.
     const file = profile?.avatars?.[name];
@@ -640,15 +641,42 @@ function resolveAvatarSrc(name) {
         const folder = encodeURIComponent(profile.folder || 'default');
         const encodedFile = encodeURIComponent(file);
         try {
-            return new URL(`avatars/${folder}/${encodedFile}`, import.meta.url).href;
+            return [
+                new URL(`./${folder}/${encodedFile}`, import.meta.url).href,
+                new URL(`./avatars/${folder}/${encodedFile}`, import.meta.url).href,
+            ];
         } catch (error) {
             console.error('[Character Thoughts] Failed to build avatar URL:', error);
-            return null;
+            return [];
         }
     }
 
     // 3) Nothing set -> caller draws the coloured initial circle.
-    return null;
+    return [];
+}
+
+function resolveAvatarSrc(name) {
+    return resolveAvatarSources(name)[0] || null;
+}
+
+function installAvatarFallbacks(container, selector) {
+    container.querySelectorAll(selector).forEach(img => {
+        const wrap = img.parentElement;
+        const name = wrap.dataset.name || '';
+        // Capture URLs now so a card switch cannot redirect a pending error
+        // to the newly active card's folder.
+        const sources = resolveAvatarSources(name);
+        let next = 1;
+        img.addEventListener('error', () => {
+            if (next < sources.length) {
+                img.src = sources[next++];
+                return;
+            }
+            wrap.classList.add('ct-avatar-fallback');
+            wrap.style.background = `hsl(${hueForName(name)} 48% 42%)`;
+            wrap.textContent = initial(name);
+        });
+    });
 }
 
 /* --------------------------------- rendering -------------------------------- */
@@ -691,16 +719,7 @@ function renderThoughtsList(body) {
         `;
     }).join('');
 
-    // Swap a broken/missing image for the coloured initial circle.
-    body.querySelectorAll('.ct-avatar img').forEach((img) => {
-        img.addEventListener('error', () => {
-            const wrap = img.parentElement;
-            const name = wrap.getAttribute('data-name') || '';
-            wrap.classList.add('ct-avatar-fallback');
-            wrap.style.background = `hsl(${hueForName(name)} 48% 42%)`;
-            wrap.textContent = initial(name);
-        });
-    });
+    installAvatarFallbacks(body, '.ct-avatar img');
 }
 
 function renderSettings(container) {
@@ -764,7 +783,7 @@ function renderSettings(container) {
             <label>Avatar folder</label>
             <input id="ct-profile-folder" type="text" spellcheck="false" value="${escapeHtml(active.folder || '')}">
         </div>
-        <div class="ct-hint">Use an existing subfolder inside this extension’s <b>avatars/</b> folder, then enter each image filename below. Keep its exact spelling. Create the folder on disk yourself, or use <b>Upload</b> to pick and crop an image saved in this browser. Uploads take priority over files.</div>
+        <div class="ct-hint">Enter a folder name inside this extension, such as <b>medicine-au</b>, then each image filename below. Older folders inside <b>avatars/</b> also work. Keep the exact spelling. Create folders on disk, or use <b>Upload</b> to save a cropped image in this browser. Uploads take priority over files.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Panel</div>
         <div class="ct-hint">Drag the strip along the bottom edge to make the panel taller or shorter. <b>Reset size</b> puts it back to the default.</div>
@@ -836,7 +855,7 @@ function renderSettings(container) {
         if (all[activeId]) {
             const folder = event.target.value.trim();
             if (!validPathPart(folder)) {
-                alert('Enter one folder name inside avatars/, without slashes.');
+                alert('Enter one folder name inside this extension, without slashes.');
                 event.target.value = all[activeId].folder;
                 return;
             }
@@ -912,15 +931,7 @@ function renderSettings(container) {
         saveProfiles(all);
         renderPanel();
     });
-    container.querySelectorAll('.ct-char-prev img').forEach(img => {
-        img.addEventListener('error', () => {
-            const wrap = img.parentElement;
-            const name = wrap.dataset.name;
-            wrap.classList.add('ct-avatar-fallback');
-            wrap.style.background = `hsl(${hueForName(name)} 48% 42%)`;
-            wrap.textContent = initial(name);
-        });
-    });
+    installAvatarFallbacks(container, '.ct-char-prev img');
 }
 
 function renderPanel() {

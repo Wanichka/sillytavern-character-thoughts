@@ -54,18 +54,18 @@ Parsing rules:
 Avatars are plain image files you drop in by hand. They live under the extension folder, grouped by profile:
 
 ```
-character-thoughts/
-└── avatars/
-    ├── polar-tang/        <- one folder per AU/profile
-    │   ├── law.png
-    │   └── bepo.png
-    └── medieval/
-        └── law.png
+sillytavern-character-thoughts/
+├── index.js
+├── medicine-au/          <- one folder per AU/profile
+│   ├── law.png
+│   └── bepo.png
+└── medieval-au/
+    └── law.png
 ```
 
 - Open the panel → ⚙ (settings). Pick or create a **profile**, set its **folder** name, then map each character to a filename (e.g. `law.png`).
 - A profile is bound to the **card file**, so two cards named “Law” keep separate settings. All chats of one card share its selected profile. Groups have their own bindings. Use the profile dropdown to choose a different set; the choice is remembered for that card.
-- The folder field preserves spaces and letter case. It refers to a subfolder of this extension's `avatars/`, not an arbitrary folder elsewhere on the computer. Create it on disk yourself and enter an exact filename, such as `law.png`, in each character's **File in folder** field.
+- The folder field preserves spaces and letter case. It refers to a subfolder of this extension, not an arbitrary folder elsewhere on the computer. For example, with a per-user installation at `SillyTavern/data/default-user/extensions/sillytavern-character-thoughts/`, enter `medicine-au` for its `medicine-au/` subfolder. Create the folder on disk yourself and enter an exact filename, such as `law.png`, in each character's **File in folder** field. The older `avatars/<folder>/<file>` layout is tried automatically if the direct file fails to load. If both exist, the direct folder wins. Paths are relative to the loaded extension, so public and per-user installations both work.
 - Alternatively, **Upload** picks and crops an image. Uploaded images are saved in this browser, not written into the disk folder, and take priority over file mappings. The **✕** button clears the uploaded image so the folder file is used again.
 - Settings retain all characters found in thoughts/moods, including those in the history of a chat when you open it and those with previously saved avatars. The thoughts panel still shows the latest captured thoughts only.
 - **🗑** beside a character removes them from this profile's settings and clears their avatar assignments without changing messages or disk files. They remain hidden even if they appear again; **Restore removed characters** brings the names back, but does not restore cleared avatars. Names must match the spelling in the thoughts/mood blocks.

@@ -123,7 +123,8 @@ test('folder and filenames preserve spelling and encode URL characters', () => {
     profiles[id].folder = 'Medicine AU';
     profiles[id].avatars.Law = 'Ло #1.png';
     api.saveProfiles(profiles);
-    assert.equal(api.resolveAvatarSrc('Law'), 'https://example.test/extensions/thoughts/avatars/Medicine%20AU/%D0%9B%D0%BE%20%231.png');
+    assert.equal(api.resolveAvatarSrc('Law'), 'https://example.test/extensions/thoughts/Medicine%20AU/%D0%9B%D0%BE%20%231.png');
+    assert.equal(api.resolveAvatarSources('Law')[1], 'https://example.test/extensions/thoughts/avatars/Medicine%20AU/%D0%9B%D0%BE%20%231.png');
     for (const invalid of ['', '.', '..', '../test', 'C:\\images']) assert.equal(api.validPathPart(invalid), false);
     assert.equal(api.validPathPart('Medicine AU'), true);
 });
