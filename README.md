@@ -64,8 +64,18 @@ character-thoughts/
 ```
 
 - Open the panel → ⚙ (settings). Pick or create a **profile**, set its **folder** name, then map each character to a filename (e.g. `law.png`).
-- A profile is bound to a chat automatically based on the SillyTavern card name, so a new card creates a new profile on its own. Use the profile dropdown to switch manually.
+- A profile is bound to the **card file**, so two cards named “Law” keep separate settings. All chats of one card share its selected profile. Groups have their own bindings. Use the profile dropdown to choose a different set; the choice is remembered for that card.
+- The folder field preserves spaces and letter case. It refers to a subfolder of this extension's `avatars/`, not an arbitrary folder elsewhere on the computer. Create it on disk yourself and enter an exact filename, such as `law.png`, in each character's **File in folder** field.
+- Alternatively, **Upload** picks and crops an image. Uploaded images are saved in this browser, not written into the disk folder, and take priority over file mappings. The **✕** button clears the uploaded image so the folder file is used again.
+- Settings retain all characters found in thoughts/moods, including those in the history of a chat when you open it and those with previously saved avatars. The thoughts panel still shows the latest captured thoughts only.
+- **🗑** beside a character removes them from this profile's settings and clears their avatar assignments without changing messages or disk files. They remain hidden even if they appear again; **Restore removed characters** brings the names back, but does not restore cleared avatars. Names must match the spelling in the thoughts/mood blocks.
 - If no file is mapped (or the file is missing), the character shows a coloured initial circle instead.
+
+### Upgrading from 1.2
+
+Old profiles and images are retained. The first time each card is opened, its old name-based profile is copied into an independent card-bound profile. If two cards previously shared a name, the extension cannot infer which images belong to which AU: open each card and choose the desired profile/folder once. Subsequent switches are automatic. Selecting the same profile for multiple cards explicitly shares its avatars and roster.
+
+Bindings use the card's avatar filename. Replacing or renaming that file outside the extension may require selecting its profile again.
 
 ## Storage
 
@@ -73,14 +83,19 @@ Everything is stored in browser `localStorage`:
 
 | Key | Holds | Lifecycle |
 | --- | --- | --- |
-| `ct_thoughts_v1::<chatId>` | parsed thoughts/mood for that chat | resets per chat; "Clear" wipes the current chat |
-| `ct_profiles_v1` | profiles: name, folder, name→file map | persists across chats |
-| `ct_chatmap_v1` | which profile each chat uses | persists |
+| `ct_thoughts_v1::<chatId>` | parsed thoughts/mood for that chat | separate per chat |
+| `ct_profiles_v1` | profile name, folder, file mappings, uploads, saved and hidden character names | persists across chats |
+| `ct_cardmap_v2` | card filename/group ID → profile | persists |
+| `ct_cardmap_v1` | old name-based bindings | retained for migration |
 
 ## Buttons
 
-- **Parse last** — re-parse the most recent message (useful after an edit or swipe).
-- **Clear** — wipe captured thoughts for the current chat only.
+- **⟳** — re-parse the most recent assistant message (useful after an edit or swipe).
+- **⚙** — configure the current card's profile, folder and saved characters.
+
+## Development checks
+
+Run `node --test tests/storage.test.cjs` (Node.js 18+). Tests cover duplicate card names, migration, switching, persistent rosters, removal, folder URLs, and delayed avatar uploads.
 
 ## Known limitations
 
