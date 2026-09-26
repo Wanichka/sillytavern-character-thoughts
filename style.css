@@ -198,7 +198,7 @@
     cursor: pointer;
     font-weight: 700;
 }
-#ct-profile-delete {
+#ct-profile-delete, #ct-profile-rename {
     flex: 0 0 auto;
     border: none;
     border-radius: 8px;
@@ -293,24 +293,7 @@
 
 .ct-char-row { flex-wrap: wrap; }
 .ct-char-name { flex: 1 1 80px; min-width: 0; }
-.ct-char-file-label {
-    flex-basis: 100%;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 11px;
-    color: var(--ct-text);
-}
-.ct-char-file {
-    flex: 1;
-    min-width: 0;
-    border: 1px solid var(--ct-border);
-    border-radius: 8px;
-    padding: 6px 8px;
-    background: var(--ct-layer-2);
-    color: var(--ct-text);
-}
-.ct-char-remove {
+.ct-char-remove, .ct-char-folder {
     border: none;
     border-radius: 8px;
     padding: 6px 8px;
@@ -318,6 +301,9 @@
     color: var(--ct-text);
     cursor: pointer;
 }
+.ct-panel-options { margin-top: 16px; font-size: 12px; }
+.ct-panel-options summary { cursor: pointer; margin-bottom: 8px; }
+.ct-set-inline select { min-width: 0; }
 
 /* --- avatar cropper modal --- */
 .ct-crop-overlay {

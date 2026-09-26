@@ -56,16 +56,37 @@ test('display name changes and card reordering do not change bindings', () => {
     assert.equal(api.getActiveProfileId(), id);
 });
 
-test('legacy profiles migrate without deleting originals or coupling duplicate names', () => {
+test('unbound cards never copy legacy avatars or rosters based on their name', () => {
     const legacy = { name: 'Medicine', folder: 'Medicine AU', uploads: { Law: 'data:old' }, avatars: { Bepo: 'bepo.png' } };
     const { api, context, read } = boot({ ct_profiles_v1: { old: legacy }, ct_cardmap_v1: { Law: 'old' } });
     const id = api.getActiveProfileId();
-    assert.equal(api.resolveAvatarSrc('Law'), 'data:old');
+    assert.equal(api.resolveAvatarSrc('Law'), null);
+    assert.deepEqual([...api.getActiveProfile().characters], []);
     api.setUploadedAvatar('Law', 'data:new');
     context.characterId = 1;
     assert.notEqual(api.getActiveProfileId(), id);
-    assert.equal(api.resolveAvatarSrc('Law'), 'data:old');
+    assert.equal(api.resolveAvatarSrc('Law'), null);
     assert.deepEqual(read('ct_profiles_v1').old, legacy);
+});
+
+test('existing bindings, uploaded avatars and saved names survive the update unchanged', () => {
+    const profile = { name: 'mafia', folder: 'mafia', avatars: {}, uploads: { Law: 'data:mafia' }, characters: ['Law', 'Bepo'], hiddenCharacters: [] };
+    const { api, read } = boot({ ct_profiles_v1: { mafia: profile }, ct_cardmap_v2: { 'card:Law.png': 'mafia' } });
+    assert.equal(api.getActiveProfileId(), 'mafia');
+    assert.deepEqual(read('ct_profiles_v1').mafia, profile);
+});
+
+test('removing a character affects only the selected set', () => {
+    const { api, context } = boot();
+    const first = api.getActiveProfileId();
+    api.rememberCharacters(['Law', 'Bepo']);
+    api.setUploadedAvatar('Bepo', 'data:first');
+    context.characterId = 1;
+    api.rememberCharacters(['Bepo']);
+    api.setUploadedAvatar('Bepo', 'data:second');
+    api.removeCharacter('Bepo', first);
+    assert.equal(api.resolveAvatarSrc('Bepo'), 'data:second');
+    assert.equal(api.getActiveProfile().characters.includes('Bepo'), true);
 });
 
 test('saved roster retains departed characters, including old upload-only entries', () => {
