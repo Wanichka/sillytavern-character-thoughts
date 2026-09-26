@@ -71,9 +71,9 @@ sillytavern-character-thoughts/
 - **🗑** beside a character removes them from this profile's settings and clears their avatar assignments without changing messages or disk files. They remain hidden even if they appear again; **Restore removed characters** brings the names back, but does not restore cleared avatars. Names must match the spelling in the thoughts/mood blocks.
 - If no file is mapped (or the file is missing), the character shows a coloured initial circle instead.
 
-### Upgrading to 1.3.1
+### Upgrading to 1.3.2
 
-Existing sets, images, rosters and card bindings are retained unchanged. New/unbound cards get an empty avatar set: old name-based profiles are no longer copied automatically. Old sets remain available for explicit selection. If 1.3.0 copied unwanted characters into a set, remove them individually with **🗑**; this update does not clean up any existing characters. Selecting the same set for multiple cards explicitly shares its avatars and roster. Creating a set with an already-used name asks for a different name instead of silently binding to someone else's set.
+Existing sets, images, rosters and card bindings are retained unchanged. New/unbound cards show **Choose an avatar set…**; opening cards, switching chats and receiving thoughts never create a set automatically. Select an existing set or explicitly create one with **＋**. Old name-based profiles are not copied automatically. If earlier versions created unwanted sets such as “Law (2)”, you can delete them manually; deletion leaves the card awaiting selection and does not recreate the set, even when deleting the last set. If 1.3.0 copied unwanted characters into a set, remove them individually with **🗑**; this update does not clean up any existing characters. Selecting the same set for multiple cards explicitly shares its avatars and roster. Creating a set with an already-used name asks for a different name instead of silently binding to someone else's set.
 
 Bindings use the card's avatar filename. Replacing or renaming that file outside the extension may require selecting its profile again.
 
