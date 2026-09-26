@@ -1,4 +1,4 @@
-// Character Thoughts v1.3.1
+// Character Thoughts v1.3.2
 // Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
@@ -230,12 +230,11 @@ function ensureProfile(profileId, displayName) {
 
 // Which AU profile is active — keyed by the ST CARD, not the chat.
 // All chats of the same card share one profile (so switching chats never
-// spawns duplicates). A card seen for the first time gets its own profile
-// created automatically once. The menu can override the binding per card.
+// spawns duplicates). Reading or switching cards never creates a set.
+// The user selects an existing set or explicitly creates one with +.
 function getActiveProfileId() {
     const cardKey = getCurrentCardKey();
     if (!cardKey) return null;
-    const cardName = getCurrentCardName();
     const map = getCardMap();
     const profiles = getProfiles();
 
@@ -243,20 +242,7 @@ function getActiveProfileId() {
         return map[cardKey];
     }
 
-    // Never infer avatar ownership from a display name. Existing bindings and
-    // sets stay intact; an unbound card starts empty and can select an old set.
-    const profileId = `bound:${cardKey}`;
-    if (!profiles[profileId]) {
-        const usedNames = new Set(Object.values(profiles).map(profile => profile.name));
-        let displayName = cardName;
-        let suffix = 2;
-        while (usedNames.has(displayName)) displayName = `${cardName} (${suffix++})`;
-        profiles[profileId] = { name: displayName, folder: slugify(cardName), avatars: {}, uploads: {}, characters: [], hiddenCharacters: [] };
-        if (!saveProfiles(profiles)) return null;
-    }
-    map[cardKey] = profileId;
-    saveCardMap(map);
-    return profileId;
+    return null;
 }
 
 function getActiveProfile() {
@@ -721,16 +707,16 @@ function renderThoughtsList(body) {
 
 function renderSettings(container) {
     const activeId = getActiveProfileId();
-    if (!activeId) {
+    if (!getCurrentCardKey()) {
         container.innerHTML = '<div class="ct-empty">Open a character or group to configure avatars.</div>';
         return;
     }
     rememberCharacters(Object.keys(getThoughts()), activeId);
     const profiles = getProfiles();
-    const active = profiles[activeId];
+    const active = profiles[activeId] || { characters: [], hiddenCharacters: [] };
     const knownNames = [...(active.characters || [])].sort((a, b) => a.localeCompare(b));
 
-    const profileOptions = Object.keys(profiles).map((id) => {
+    const profileOptions = (activeId ? '' : '<option value="" selected disabled>Choose an avatar set…</option>') + Object.keys(profiles).map((id) => {
         const selected = id === activeId ? ' selected' : '';
         return `<option value="${escapeHtml(id)}"${selected}>${escapeHtml(profiles[id].name || 'Unnamed set')}</option>`;
     }).join('');
@@ -757,7 +743,7 @@ function renderSettings(container) {
                 </div>
             `;
         }).join('')
-        : '<div class="ct-empty">No characters yet. They appear here after a turn with thoughts.</div>';
+        : `<div class="ct-empty">${activeId ? 'No characters yet. They appear here after a turn with thoughts.' : 'Choose an existing set above, or use + to create one. No set is created automatically.'}</div>`;
 
     container.innerHTML = `
         <div class="ct-hint">Card: <b>${escapeHtml(getCurrentCardName())}</b>. The selected set is remembered for this card.</div>
@@ -766,8 +752,8 @@ function renderSettings(container) {
             <div class="ct-set-inline">
                 <select id="ct-profile-select">${profileOptions}</select>
                 <button id="ct-profile-new" type="button" title="New avatar set" aria-label="New avatar set">＋</button>
-                <button id="ct-profile-rename" type="button" title="Rename avatar set" aria-label="Rename avatar set">✎</button>
-                <button id="ct-profile-delete" type="button" title="Delete this avatar set">🗑</button>
+                <button id="ct-profile-rename" type="button" title="Rename avatar set" aria-label="Rename avatar set"${activeId ? '' : ' disabled'}>✎</button>
+                <button id="ct-profile-delete" type="button" title="Delete this avatar set"${activeId ? '' : ' disabled'}>🗑</button>
             </div>
         </div>
         <div class="ct-hint">Upload a picture, or use 📁 for a file in an existing folder. Cards using the same set share its avatars and character list.</div>
@@ -810,17 +796,12 @@ function renderSettings(container) {
 
     container.querySelector('#ct-profile-delete')?.addEventListener('click', () => {
         const all = getProfiles();
-        const ids = Object.keys(all);
-        if (ids.length <= 1) {
-            alert('Can’t delete the only profile.');
-            return;
-        }
+        if (!activeId || !all[activeId]) return;
         const label = all[activeId]?.name || activeId;
         if (!confirm(`Delete profile “${label}”?\nThe avatar image files on disk are NOT removed.`)) return;
         delete all[activeId];
         if (!saveProfiles(all)) return;
-        // Remove every binding to the deleted profile. Other cards get their
-        // own fresh profile when next opened, never an arbitrary card's set.
+        // Cards that shared this set return to the explicit selection state.
         const bindings = getCardMap();
         for (const key of Object.keys(bindings)) {
             if (bindings[key] === activeId) bindings[key] = null;

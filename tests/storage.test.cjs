@@ -4,7 +4,13 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
-function boot(seed = {}, cards = [{ name: 'Law', avatar: 'Law.png' }, { name: 'Law', avatar: 'Law2.png' }]) {
+function boot(seed = {
+    ct_profiles_v1: {
+        first: { name: 'Medicine', folder: 'medicine', avatars: {}, uploads: {}, characters: [] },
+        second: { name: 'Mafia', folder: 'mafia', avatars: {}, uploads: {}, characters: [] },
+    },
+    ct_cardmap_v2: { 'card:Law.png': 'first', 'card:Law2.png': 'second' },
+}, cards = [{ name: 'Law', avatar: 'Law.png' }, { name: 'Law', avatar: 'Law2.png' }]) {
     const storage = new Map(Object.entries(seed).map(([k, v]) => [k, JSON.stringify(v)]));
     const context = { characters: cards, characterId: 0, groupId: null, chatId: 'chat-a', chat: [] };
     const sandbox = {
@@ -41,9 +47,9 @@ test('same-named cards keep independent uploads and switch back automatically', 
     assert.equal(api.getActiveProfileId(), first);
 });
 
-test('first access returns the created profile, not a stale default', () => {
+test('first access returns the selected profile', () => {
     const { api } = boot();
-    assert.equal(api.getActiveProfile().name, 'Law');
+    assert.equal(api.getActiveProfile().name, 'Medicine');
 });
 
 test('display name changes and card reordering do not change bindings', () => {
@@ -61,10 +67,10 @@ test('unbound cards never copy legacy avatars or rosters based on their name', (
     const { api, context, read } = boot({ ct_profiles_v1: { old: legacy }, ct_cardmap_v1: { Law: 'old' } });
     const id = api.getActiveProfileId();
     assert.equal(api.resolveAvatarSrc('Law'), null);
-    assert.deepEqual([...api.getActiveProfile().characters], []);
+    assert.equal(id, null);
     api.setUploadedAvatar('Law', 'data:new');
     context.characterId = 1;
-    assert.notEqual(api.getActiveProfileId(), id);
+    assert.equal(api.getActiveProfileId(), null);
     assert.equal(api.resolveAvatarSrc('Law'), null);
     assert.deepEqual(read('ct_profiles_v1').old, legacy);
 });
@@ -169,13 +175,32 @@ test('missing and deleted profiles recover without resurrecting legacy avatars',
     const { api } = boot({ ct_cardmap_v2: { 'card:Law.png': null }, ct_cardmap_v1: { Law: 'old' }, ct_profiles_v1: { old: { uploads: { Law: 'data:old' } } } });
     assert.equal(api.resolveAvatarSrc('Law'), null);
     api.saveCardMap({ 'card:Law.png': 'missing' });
-    assert.ok(api.getActiveProfileId());
+    assert.equal(api.getActiveProfileId(), null);
 });
 
 test('no open card does not create or bind a phantom default profile', () => {
-    const { api, context, read } = boot();
+    const { api, context, read } = boot({});
     context.characterId = undefined;
     assert.equal(api.getActiveProfileId(), null);
     api.rememberChatCharacters();
     assert.equal(read('ct_profiles_v1'), null);
+});
+
+test('opening and switching unbound cards and groups never creates sets', () => {
+    const { api, context, read } = boot({});
+    for (let n = 0; n < 5; n++) {
+        context.characterId = n % 2;
+        api.handleChatChanged();
+        api.getActiveProfile();
+        api.updateFromText('<char_thoughts>Bepo: here</char_thoughts>');
+        assert.equal(api.getActiveProfileId(), null);
+    }
+    context.groupId = 42;
+    api.handleChatChanged();
+    assert.equal(read('ct_profiles_v1'), null);
+    assert.equal(read('ct_cardmap_v2'), null);
+    api.ensureProfile('chosen', 'Chosen');
+    api.setActiveProfileId('chosen');
+    api.rememberChatCharacters();
+    assert.deepEqual([...api.getActiveProfile().characters], ['Bepo']);
 });
