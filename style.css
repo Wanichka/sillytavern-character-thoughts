@@ -188,6 +188,15 @@
     color: var(--ct-text);
     font-size: 12px;
 }
+#ct-char-list {
+    max-height: min(55vh, 520px);
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding-right: 3px;
+}
 #ct-profile-new {
     flex: 0 0 auto;
     border: none;

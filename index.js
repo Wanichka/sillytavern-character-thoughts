@@ -1,4 +1,4 @@
-// Character Thoughts v1.3.3
+// Character Thoughts v1.3.4
 // Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
@@ -314,26 +314,35 @@ function setActiveProfileId(profileId) {
     saveCardMap(map);
 }
 
-function rememberCharacters(names, profileId = getActiveProfileId()) {
+function rememberCharacters(names, profileId = getActiveProfileId(), { current = false } = {}) {
     const profiles = getProfiles();
     const profile = profiles[profileId];
     if (!profile) return;
-    const hidden = new Set(profile.hiddenCharacters || []);
+    // Current thoughts are authoritative: observing a character saves them,
+    // whether or not they have an avatar. History alone respects manual removal.
+    const observed = new Set(names.map(normalizeCharacterName));
+    const previousHidden = profile.hiddenCharacters || [];
+    const hiddenNames = current
+        ? previousHidden.filter(name => !observed.has(normalizeCharacterName(name)))
+        : previousHidden;
+    const hidden = new Set(hiddenNames.map(normalizeCharacterName));
     const known = new Set([
         ...(profile.characters || []),
         ...Object.keys(profile.avatars || {}),
         ...Object.keys(profile.uploads || {}),
         ...names,
-    ].filter(name => !hidden.has(name)));
+    ].filter(name => !hidden.has(normalizeCharacterName(name))));
     const characters = [...known];
-    if (JSON.stringify(characters) !== JSON.stringify(profile.characters)) {
+    if (JSON.stringify(characters) !== JSON.stringify(profile.characters)
+        || hiddenNames.length !== previousHidden.length) {
         profile.characters = characters;
+        profile.hiddenCharacters = hiddenNames;
         saveProfiles(profiles);
     }
 }
 
 // Backfill the roster from the open chat, including characters absent from the
-// latest turn. Hidden names stay hidden across refreshes and subsequent turns.
+// latest turn. Only current thoughts may re-add a previously removed character.
 function rememberChatCharacters() {
     const names = new Set(Object.keys(getThoughts()));
     for (const message of getContextSafe()?.chat || []) {
@@ -341,6 +350,7 @@ function rememberChatCharacters() {
         for (const name of Object.keys(parseMessage(message?.mes) || {})) names.add(name);
     }
     rememberCharacters([...names]);
+    rememberCharacters(Object.keys(getThoughts()), getActiveProfileId(), { current: true });
 }
 
 function removeCharacter(name, profileId) {
@@ -455,7 +465,7 @@ function updateFromText(messageText, showAlerts = false) {
     }
 
     saveThoughts(map);
-    rememberCharacters(Object.keys(map));
+    rememberCharacters(Object.keys(map), getActiveProfileId(), { current: true });
     renderPanel();
     return true;
 }
@@ -819,7 +829,7 @@ function renderSettings(container) {
         <div class="ct-hint">Upload a picture, or use 📁 for a file in an existing folder. Cards using the same set share its avatars and character list.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Avatars by character</div>
-        <div class="ct-hint">Characters from thoughts and moods stay here, even without a picture or after leaving the scene. Use <b>Names</b> to give one avatar several names.</div>
+        <div class="ct-hint">Characters from thoughts and moods are saved automatically, even without a picture or after leaving the scene. Use <b>Names</b> to give one avatar several names.</div>
         ${(active.hiddenCharacters || []).length ? '<button id="ct-restore-characters" type="button" class="ct-char-clear">Restore removed characters</button>' : ''}
         <div id="ct-char-list">${charRows}</div>
         <details class="ct-panel-options"><summary>Panel size</summary>
