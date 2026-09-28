@@ -204,3 +204,51 @@ test('opening and switching unbound cards and groups never creates sets', () => 
     api.rememberChatCharacters();
     assert.deepEqual([...api.getActiveProfile().characters], ['Bepo']);
 });
+
+test('one uploaded avatar follows listed names in the same set', () => {
+    const { api, context } = boot();
+    api.setUploadedAvatar('Трафальгар Ло', 'data:law');
+    api.rememberCharacters(['Трафальгар Ло', 'Ло']);
+    const result = api.setAvatarAliases(api.getActiveProfileId(), 'Трафальгар Ло',
+        api.parseAliases('Ло, Трафальгар, Trafalgar Law,  ло ', 'Трафальгар Ло'));
+    assert.equal(result.ok, true);
+    assert.equal(api.resolveAvatarSrc('Ло'), 'data:law');
+    assert.equal(api.resolveAvatarSrc('  TRAFALGAR   LAW '), 'data:law');
+    assert.equal(api.resolveAvatarSrc('Трафальгар'), 'data:law');
+    assert.equal(api.getThoughts().Ло, undefined);
+    context.characterId = 1;
+    assert.equal(api.resolveAvatarSrc('Ло'), null);
+});
+
+test('alias text preserves names in thoughts and rejects competing avatar ownership', () => {
+    const { api } = boot();
+    const id = api.getActiveProfileId();
+    api.setUploadedAvatar('Трафальгар Ло', 'data:law');
+    api.setUploadedAvatar('Клион', 'data:klion');
+    api.setAvatarAliases(id, 'Трафальгар Ло', ['Ло']);
+    api.updateFromText('<char_thoughts>Ло: Сегодня тихо</char_thoughts>');
+    assert.equal(api.getThoughts().Ло.thought, 'Сегодня тихо');
+    assert.equal(api.resolveAvatarSrc('Ло'), 'data:law');
+    assert.equal(api.setAvatarAliases(id, 'Клион', ['Ло']).ok, false);
+    assert.equal(api.resolveAvatarSrc('Ло'), 'data:law');
+});
+
+test('folder avatar aliases work and removing an owner clears its names only in that set', () => {
+    const { api, context } = boot();
+    const id = api.getActiveProfileId();
+    const profiles = api.getProfiles();
+    profiles[id].avatars['Трафальгар Ло'] = 'law.png';
+    api.saveProfiles(profiles);
+    api.setAvatarAliases(id, 'Трафальгар Ло', ['Ло']);
+    api.rememberCharacters(['Трафальгар Ло', 'Ло']);
+    assert.ok(api.resolveAvatarSrc('Ло').endsWith('/medicine/law.png'));
+    context.characterId = 1;
+    api.setUploadedAvatar('Ло', 'data:other');
+    context.characterId = 0;
+    api.removeCharacter('Трафальгар Ло', id);
+    api.rememberCharacters(['Ло']);
+    assert.equal(api.resolveAvatarSrc('Ло'), null);
+    assert.equal(api.getActiveProfile().characters.includes('Ло'), false);
+    context.characterId = 1;
+    assert.equal(api.resolveAvatarSrc('Ло'), 'data:other');
+});

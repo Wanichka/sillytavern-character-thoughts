@@ -68,10 +68,11 @@ sillytavern-character-thoughts/
 - For a disk image, click **📁** beside the character. Enter the folder name and exact image filename when prompted. Folder spelling and case are preserved. The folder applies to the entire set; the filename applies to this character. Cancelling either prompt saves nothing. Choosing a file replaces this character's uploaded image. For a per-user installation at `SillyTavern/data/default-user/extensions/sillytavern-character-thoughts/`, enter `medicine-au` for its `medicine-au/` subfolder. The folder must already exist. The older `avatars/<folder>/<file>` layout is tried if the direct file fails to load. If both exist, the direct folder wins. Paths are relative to the loaded extension, supporting public and per-user installations.
 - Alternatively, **Upload** picks and crops an image. Uploaded images are saved in this browser, not written into the disk folder, and take priority over file mappings. The **✕** button clears the uploaded image so the folder file is used again.
 - Settings retain all characters found in thoughts/moods, including those in the history of a chat when you open it and those with previously saved avatars. The thoughts panel still shows the latest captured thoughts only.
+- **Names** beside a character lets one avatar respond to several names. For example, give `Трафальгар Ло` the names `Ло, Трафальгар, Trafalgar Law`. Matching ignores letter case and repeated spaces; the displayed thought name stays exactly as written by the model. Names apply only to the selected avatar set. If another character in that set already owns an avatar or name mapping, the extension refuses a conflicting name. Editing Names to an empty value clears the list. Removing the main character also removes its alternate names.
 - **🗑** beside a character removes them from this profile's settings and clears their avatar assignments without changing messages or disk files. They remain hidden even if they appear again; **Restore removed characters** brings the names back, but does not restore cleared avatars. Names must match the spelling in the thoughts/mood blocks.
 - If no file is mapped (or the file is missing), the character shows a coloured initial circle instead.
 
-### Upgrading to 1.3.2
+### Upgrading to 1.3.3
 
 Existing sets, images, rosters and card bindings are retained unchanged. New/unbound cards show **Choose an avatar set…**; opening cards, switching chats and receiving thoughts never create a set automatically. Select an existing set or explicitly create one with **＋**. Old name-based profiles are not copied automatically. If earlier versions created unwanted sets such as “Law (2)”, you can delete them manually; deletion leaves the card awaiting selection and does not recreate the set, even when deleting the last set. If 1.3.0 copied unwanted characters into a set, remove them individually with **🗑**; this update does not clean up any existing characters. Selecting the same set for multiple cards explicitly shares its avatars and roster. Creating a set with an already-used name asks for a different name instead of silently binding to someone else's set.
 
@@ -84,7 +85,7 @@ Everything is stored in browser `localStorage`:
 | Key | Holds | Lifecycle |
 | --- | --- | --- |
 | `ct_thoughts_v1::<chatId>` | parsed thoughts/mood for that chat | separate per chat |
-| `ct_profiles_v1` | profile name, folder, file mappings, uploads, saved and hidden character names | persists across chats |
+| `ct_profiles_v1` | profile name, folder, file mappings, uploads, saved and hidden character names, alternate names | persists across chats |
 | `ct_cardmap_v2` | card filename/group ID → profile | persists |
 | `ct_cardmap_v1` | old name-based bindings | left untouched; no longer used for automatic copying |
 
