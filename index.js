@@ -1,4 +1,4 @@
-// Character Thoughts v1.3.4
+// Character Thoughts v1.3.5
 // Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
@@ -1006,7 +1006,7 @@ function showView(view) {
 
     if (view === 'settings') {
         body.style.display = 'none';
-        settings.style.display = 'block';
+        settings.style.display = 'flex';
         renderSettings(settings);
     } else {
         settings.style.display = 'none';

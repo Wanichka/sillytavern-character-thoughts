@@ -93,6 +93,13 @@
     overflow-y: auto;
     overflow-x: hidden;
 }
+#ct-settings {
+    flex-direction: column;
+    overflow: hidden;
+}
+#ct-settings > :not(#ct-char-list) {
+    flex: 0 0 auto;
+}
 
 /* --- thought cards --- */
 .ct-card {
@@ -189,7 +196,7 @@
     font-size: 12px;
 }
 #ct-char-list {
-    max-height: min(55vh, 520px);
+    flex: 1 1 0;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -473,6 +480,9 @@
     overflow-y: auto;
     height: auto !important;
     padding: 9px !important;
+}
+#rpt-shell #ct-panel[data-rpt-docked] #ct-settings {
+    overflow: hidden;
 }
 #rpt-shell #ct-panel[data-rpt-docked] #ct-close,
 #rpt-shell #ct-panel[data-rpt-docked] #ct-resize { display: none !important; }
