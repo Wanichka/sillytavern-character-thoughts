@@ -1,4 +1,4 @@
-// Character Thoughts v1.3.2
+// Character Thoughts v1.3.3
 // Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
@@ -137,6 +137,59 @@ function slugify(text) {
 function initial(name) {
     const trimmed = String(name ?? '').trim();
     return trimmed ? trimmed[0].toUpperCase() : '?';
+}
+
+function normalizeCharacterName(name) {
+    return String(name ?? '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+// Resolve an observed name to the character whose avatar it shares. Aliases
+// belong to one avatar set; thought text keeps the name the model actually used.
+function avatarOwner(profile, name) {
+    const wanted = normalizeCharacterName(name);
+    for (const [owner, aliases] of Object.entries(profile.aliases || {})) {
+        if (normalizeCharacterName(owner) === wanted || aliases.some(alias => normalizeCharacterName(alias) === wanted)) {
+            return owner;
+        }
+    }
+    for (const owner of new Set([...Object.keys(profile.uploads || {}), ...Object.keys(profile.avatars || {})])) {
+        if (normalizeCharacterName(owner) === wanted) return owner;
+    }
+    return name;
+}
+
+function parseAliases(text, owner) {
+    const seen = new Set([normalizeCharacterName(owner)]);
+    return String(text ?? '').split(',').map(name => name.trim().replace(/\s+/g, ' ')).filter(name => {
+        const key = normalizeCharacterName(name);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function setAvatarAliases(profileId, owner, aliases) {
+    const profiles = getProfiles();
+    const profile = profiles[profileId];
+    if (!profile) return { ok: false, conflict: owner };
+    const claimed = new Set(aliases.map(normalizeCharacterName));
+    for (const other of new Set([
+        ...Object.keys(profile.aliases || {}),
+        ...Object.keys(profile.uploads || {}),
+        ...Object.keys(profile.avatars || {}),
+    ])) {
+        if (other === owner) continue;
+        if (claimed.has(normalizeCharacterName(other)) && (profile.uploads?.[other] || profile.avatars?.[other] || profile.aliases?.[other]?.length)) {
+            return { ok: false, conflict: other };
+        }
+        if ((profile.aliases?.[other] || []).some(alias => claimed.has(normalizeCharacterName(alias)))) {
+            return { ok: false, conflict: other };
+        }
+    }
+    profile.aliases ||= {};
+    if (aliases.length) profile.aliases[owner] = aliases;
+    else delete profile.aliases[owner];
+    return { ok: saveProfiles(profiles) };
 }
 
 // Stable hue from a name so each character gets a consistent fallback colour.
@@ -294,10 +347,13 @@ function removeCharacter(name, profileId) {
     const profiles = getProfiles();
     const profile = profiles[profileId];
     if (!profile) return false;
-    profile.characters = (profile.characters || []).filter(item => item !== name);
-    profile.hiddenCharacters = [...new Set([...(profile.hiddenCharacters || []), name])];
+    const names = new Set([name, ...(profile.aliases?.[name] || [])]);
+    const keys = new Set([...names].map(normalizeCharacterName));
+    profile.characters = (profile.characters || []).filter(item => !keys.has(normalizeCharacterName(item)));
+    profile.hiddenCharacters = [...new Set([...(profile.hiddenCharacters || []), ...names])];
     delete profile.avatars?.[name];
     delete profile.uploads?.[name];
+    delete profile.aliases?.[name];
     return saveProfiles(profiles);
 }
 
@@ -613,6 +669,7 @@ function buildCropper(dataUrl, onSave) {
 
 function resolveAvatarSources(name) {
     const profile = getActiveProfile();
+    name = avatarOwner(profile, name);
 
     // 1) An image uploaded through the menu (stored as a data URL).
     const uploaded = profile?.uploads?.[name];
@@ -714,7 +771,9 @@ function renderSettings(container) {
     rememberCharacters(Object.keys(getThoughts()), activeId);
     const profiles = getProfiles();
     const active = profiles[activeId] || { characters: [], hiddenCharacters: [] };
-    const knownNames = [...(active.characters || [])].sort((a, b) => a.localeCompare(b));
+    const knownNames = [...(active.characters || [])]
+        .filter(name => avatarOwner(active, name) === name)
+        .sort((a, b) => a.localeCompare(b));
 
     const profileOptions = (activeId ? '' : '<option value="" selected disabled>Choose an avatar set…</option>') + Object.keys(profiles).map((id) => {
         const selected = id === activeId ? ' selected' : '';
@@ -737,6 +796,7 @@ function renderSettings(container) {
                     <div class="ct-char-btns">
                         <button class="ct-char-upload" type="button" data-name="${escapeHtml(name)}">Upload</button>
                         <button class="ct-char-folder" type="button" data-name="${escapeHtml(name)}" title="Use an image from a folder" aria-label="Use an image from a folder for ${escapeHtml(name)}">📁</button>
+                        <button class="ct-char-aliases" type="button" data-name="${escapeHtml(name)}" title="Other names for this avatar">Names${active.aliases?.[name]?.length ? ` (${active.aliases[name].length})` : ''}</button>
                         ${clearBtn}
                         <button class="ct-char-remove" type="button" data-name="${escapeHtml(name)}" title="Remove character from this profile">🗑</button>
                     </div>
@@ -759,7 +819,7 @@ function renderSettings(container) {
         <div class="ct-hint">Upload a picture, or use 📁 for a file in an existing folder. Cards using the same set share its avatars and character list.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Avatars by character</div>
-        <div class="ct-hint">Characters from thoughts and moods stay here, even without a picture or after leaving the scene.</div>
+        <div class="ct-hint">Characters from thoughts and moods stay here, even without a picture or after leaving the scene. Use <b>Names</b> to give one avatar several names.</div>
         ${(active.hiddenCharacters || []).length ? '<button id="ct-restore-characters" type="button" class="ct-char-clear">Restore removed characters</button>' : ''}
         <div id="ct-char-list">${charRows}</div>
         <details class="ct-panel-options"><summary>Panel size</summary>
@@ -879,6 +939,21 @@ function renderSettings(container) {
             // Explicitly choosing a folder image replaces this character's upload.
             delete all[activeId].uploads?.[name];
             if (!saveProfiles(all)) alert('Could not save changes. Browser storage may be full.');
+            renderPanel();
+        });
+    });
+    container.querySelectorAll('.ct-char-aliases').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const owner = btn.dataset.name;
+            const input = prompt(`Other names for ${owner}, separated by commas:`, (active.aliases?.[owner] || []).join(', '));
+            if (input === null) return;
+            const result = setAvatarAliases(activeId, owner, parseAliases(input, owner));
+            if (!result.ok) {
+                alert(result.conflict
+                    ? `“${result.conflict}” already has an avatar or name mapping in this set. Clear that assignment first.`
+                    : 'Could not save names. Browser storage may be full.');
+                return;
+            }
             renderPanel();
         });
     });
