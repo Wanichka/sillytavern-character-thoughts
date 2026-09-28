@@ -25,7 +25,7 @@ function boot(seed = {
             setItem: (k, v) => storage.set(k, v),
         },
     };
-    const source = fs.readFileSync(path.join(__dirname, '../index.js'), 'utf8')
+    const source = fs.readFileSync(process.env.CT_SOURCE_PATH || path.join(__dirname, '../index.js'), 'utf8')
         .replace(/import\s*\{[\s\S]*?\}\s*from\s*'[^']+';/g, '')
         .replaceAll('import.meta.url', "'https://example.test/extensions/thoughts/index.js'");
     vm.createContext(sandbox);
@@ -117,19 +117,59 @@ test('opening chat backfills history, excluding user and system text', () => {
     assert.deepEqual([...api.getActiveProfile().characters].sort(), ['Bepo', 'Law']);
 });
 
-test('manual removal survives reparse, history backfill and reload', () => {
+test('removed offscene characters stay removed during history backfill and reload', () => {
     const { api, context, storage } = boot();
     context.chat = [{ mes: '<char_thoughts>Bepo: hello</char_thoughts>' }];
     api.handleChatChanged();
     api.setUploadedAvatar('Bepo', 'data:bepo');
     api.removeCharacter('Bepo', api.getActiveProfileId());
-    api.updateFromText(context.chat[0].mes);
+    api.updateFromText('<char_thoughts>Law: here</char_thoughts>');
     api.handleChatChanged();
     assert.equal(api.getActiveProfile().characters.includes('Bepo'), false);
     assert.equal(api.resolveAvatarSrc('Bepo'), null);
     const reloaded = boot(Object.fromEntries([...storage].map(([k, v]) => [k, JSON.parse(v)])));
     reloaded.api.rememberCharacters(['Bepo']);
     assert.equal(reloaded.api.getActiveProfile().characters.includes('Bepo'), false);
+});
+
+test('a name in new thoughts is saved without an avatar, even after earlier removal', () => {
+    const { api, storage, read } = boot();
+    api.removeCharacter('Капитан', api.getActiveProfileId());
+    api.updateFromText('<char_thoughts>Капитан: Хороший день</char_thoughts>');
+    assert.equal(api.getActiveProfile().characters.includes('Капитан'), true);
+    assert.equal(api.getActiveProfile().hiddenCharacters.includes('Капитан'), false);
+    assert.equal(api.resolveAvatarSrc('Капитан'), null);
+    assert.deepEqual(read('ct_profiles_v1').first.uploads, {});
+    api.updateFromText('<char_thoughts>Law: Next turn</char_thoughts>');
+    const reloaded = boot(Object.fromEntries([...storage].map(([k, v]) => [k, JSON.parse(v)])));
+    reloaded.api.handleChatChanged();
+    assert.equal(reloaded.api.getActiveProfile().characters.includes('Капитан'), true);
+    assert.equal(reloaded.api.resolveAvatarSrc('Капитан'), null);
+    assert.equal(read('ct_profiles_v1').second.characters.includes('Капитан'), false);
+});
+
+test('opening a chat repairs missing current names and keeps them after they leave', () => {
+    const { api } = boot();
+    api.removeCharacter('Капитан', api.getActiveProfileId());
+    api.saveThoughts({ 'Капитан': { name: 'Капитан', thought: 'Already visible', mood: '' } });
+    api.handleChatChanged();
+    assert.equal(api.getActiveProfile().characters.includes('Капитан'), true);
+    api.updateFromText('<char_thoughts>Law: Next turn</char_thoughts>');
+    assert.equal(api.getActiveProfile().characters.includes('Капитан'), true);
+});
+
+test('normal incoming messages save new characters without modifying the chat or prompt', () => {
+    const { api, context, storage } = boot();
+    context.chat = [{ mes: '<char_thoughts>Капитан: First thought</char_thoughts>' }];
+    context.setExtensionPrompt = () => { throw new Error('Roster must not be injected into the prompt'); };
+    const chatBefore = JSON.stringify(context.chat);
+    api.handleIncomingMessage(0);
+    assert.equal(api.getActiveProfile().characters.includes('Капитан'), true);
+    assert.equal(api.resolveAvatarSrc('Капитан'), null);
+    assert.equal(JSON.stringify(context.chat), chatBefore);
+    api.updateFromText('<char_thoughts>Law: Next turn</char_thoughts>');
+    const reloaded = boot(Object.fromEntries([...storage].map(([k, v]) => [k, JSON.parse(v)])));
+    assert.equal(reloaded.api.getActiveProfile().characters.includes('Капитан'), true);
 });
 
 test('upload finishing after card switch saves to its original profile', () => {
