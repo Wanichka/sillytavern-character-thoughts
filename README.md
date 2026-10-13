@@ -71,7 +71,7 @@ sillytavern-character-thoughts/
 - **Names** beside a character lets one avatar respond to several names. For example, give `Трафальгар Ло` the names `Ло, Трафальгар, Trafalgar Law`. Matching ignores letter case and repeated spaces; the displayed thought name stays exactly as written by the model. Names apply only to the selected avatar set. If another character in that set already owns an avatar or name mapping, the extension refuses a conflicting name. Editing Names to an empty value clears the list. Removing the main character also removes its alternate names.
 - Characters are saved to the selected set as soon as their thoughts or moods are parsed, independently of avatar assignment. They stay saved after leaving the scene and after a browser reload. Opening a chat also saves names already visible in its current thoughts.
 - **🗑** beside a character removes them from this profile's settings and clears their avatar assignments without changing messages or disk files. History alone does not undo removal. Appearing in current thoughts saves the character again, even without an avatar. **Restore removed characters** brings back all removed names without restoring cleared avatars.
-- Long character lists scroll inside the settings panel, so even the bottom rows remain reachable.
+- Long character lists scroll inside the settings panel, so even the bottom rows remain reachable. On tablets and phones with a coarse primary pointer, the entire settings area scrolls, including the avatar set controls; desktop keeps those controls fixed while the character list scrolls. This also applies inside the Roleplay Tools dock.
 - If no file is mapped (or the file is missing), the character shows a coloured initial circle instead.
 
 ### Upgrading to 1.3.3
