@@ -71,6 +71,14 @@ function html(docked) {
    if(scenario.blockHeight>=800) assert(fixedAfter.outerTop>fixedBefore.outerTop,scenario.name+': host scrolls from settings content');
    else assert(fixedAfter.innerTop>fixedBefore.innerTop,scenario.name+': settings still scrolls');
    assert.equal(fixedAfter.panelHeight,fixedBefore.panelHeight,scenario.name+': geometry preserved');
+   await page.locator('#ct-char-list .ct-char-row:last-child').scrollIntoViewIfNeeded();
+   const lastReachable=await page.evaluate(()=>{
+    const last=document.querySelector('#ct-char-list .ct-char-row:last-child').getBoundingClientRect();
+    const inner=document.querySelector('#ct-settings').getBoundingClientRect();
+    const outer=document.querySelector('.rpt-page:not([hidden])').getBoundingClientRect();
+    return last.top>=Math.max(inner.top,outer.top)&&last.bottom<=Math.min(inner.bottom,outer.bottom);
+   });
+   assert(lastReachable,scenario.name+': last avatar row remains reachable');
    assert.deepEqual(errors,[]);
    console.log('PASS',scenario.name);
    summary.push({scenario:scenario.name,fixedBefore,fixedAfter});await context.close();

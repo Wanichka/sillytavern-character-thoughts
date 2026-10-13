@@ -1,4 +1,4 @@
-// Character Thoughts v1.3.8
+// Character Thoughts v1.3.9
 // Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
@@ -832,9 +832,6 @@ function renderSettings(container) {
         <div class="ct-hint">Characters from thoughts and moods are saved automatically, even without a picture or after leaving the scene. Use <b>Names</b> to give one avatar several names.</div>
         ${(active.hiddenCharacters || []).length ? '<button id="ct-restore-characters" type="button" class="ct-char-clear">Restore removed characters</button>' : ''}
         <div id="ct-char-list">${charRows}</div>
-        <details class="ct-panel-options"><summary>Panel size</summary>
-            <button id="ct-size-reset" type="button" class="ct-char-clear">Reset size</button>
-        </details>
     `;
 
     container.querySelector('#ct-profile-select')?.addEventListener('change', (event) => {
@@ -890,10 +887,6 @@ function renderSettings(container) {
             saveProfiles(all);
             renderSettings(container);
         }
-    });
-
-    container.querySelector('#ct-size-reset')?.addEventListener('click', () => {
-        resetPanelSize();
     });
 
     container.querySelectorAll('.ct-char-upload').forEach((btn) => {
@@ -1182,19 +1175,6 @@ function restoreSize(el, storageKey) {
         applyHeight(el, clampHeight(saved.h));
     } catch (error) {
         console.error('[Character Thoughts] Failed to restore height:', error);
-    }
-}
-
-function resetPanelSize() {
-    const panel = document.querySelector('#ct-panel');
-    try {
-        localStorage.removeItem(SIZE_KEY);
-    } catch (e) { /* ignore */ }
-    if (panel) {
-        clearSize(panel);
-        // The panel may have been dragged; keep it fully on-screen at its
-        // default size too.
-        restorePosition(panel, 'ct_panel_pos');
     }
 }
 

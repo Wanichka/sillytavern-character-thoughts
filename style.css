@@ -316,8 +316,6 @@
     cursor: pointer;
 }
 .ct-char-aliases { font-size: 11px; }
-.ct-panel-options { margin-top: 16px; font-size: 12px; }
-.ct-panel-options summary { cursor: pointer; margin-bottom: 8px; }
 .ct-set-inline select { min-width: 0; }
 
 /* --- avatar cropper modal --- */
