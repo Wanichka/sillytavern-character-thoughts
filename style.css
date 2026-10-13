@@ -484,8 +484,9 @@
 #rpt-shell .rpt-collapsed #ct-panel[data-rpt-docked] #ct-body,
 #rpt-shell .rpt-collapsed #ct-panel[data-rpt-docked] #ct-settings { display: none !important; }
 
-/* One settings scroller on every input device, including tablets whose browser
-   reports a fine primary pointer. This applies to standalone and docked panels. */
+/* A tall saved dock block may fit all settings while overflowing the host page.
+   Let wheel/touch scrolling reach that page when this area cannot scroll, or
+   reaches its edge. Containment would leave only the host's narrow gutter usable. */
 #ct-settings {
-    overscroll-behavior: contain;
+    overscroll-behavior: auto;
 }

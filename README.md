@@ -72,6 +72,7 @@ sillytavern-character-thoughts/
 - Characters are saved to the selected set as soon as their thoughts or moods are parsed, independently of avatar assignment. They stay saved after leaving the scene and after a browser reload. Opening a chat also saves names already visible in its current thoughts.
 - **🗑** beside a character removes them from this profile's settings and clears their avatar assignments without changing messages or disk files. History alone does not undo removal. Appearing in current thoughts saves the character again, even without an avatar. **Restore removed characters** brings back all removed names without restoring cleared avatars.
 - The entire settings area scrolls on all devices, including the avatar set controls, character list and panel size options. Short panels keep every row reachable without relying on tablet detection or a separate list scrollbar. This also applies inside the Roleplay Tools dock.
+- If a saved dock block is taller than the visible page, scrolling over the settings continues through the surrounding Roleplay Tools page. You do not need to aim at the page's scrollbar or narrow gutter.
 - If no file is mapped (or the file is missing), the character shows a coloured initial circle instead.
 
 ### Upgrading to 1.3.3
@@ -101,6 +102,8 @@ The saved character list and avatar mappings are local UI data. This extension d
 ## Development checks
 
 Run `node --test tests/storage.test.cjs` (Node.js 18+). Tests cover duplicate card names, migration, switching, persistent rosters, removal, folder URLs, and delayed avatar uploads.
+
+The optional browser regression `node tests/docked-scroll.cjs` requires Playwright/Chromium and a Roleplay Tools checkout beside this repository. Set `CT_ROLEPLAY_TOOLS_DIR` to use another checkout, `CT_CHROMIUM_PATH` to use an installed browser, and `CT_SILLYTAVERN_CSS` to include SillyTavern's base stylesheet. It tests wheel/touch scrolling over settings content in multi-block layouts, including oversized saved blocks with no internal overflow.
 
 ## Known limitations
 
