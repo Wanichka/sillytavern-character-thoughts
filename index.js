@@ -1,4 +1,4 @@
-// Character Thoughts v1.3.6
+// Character Thoughts v1.3.7
 // Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.

@@ -95,7 +95,6 @@
 }
 #ct-settings {
     flex-direction: column;
-    overflow: hidden;
 }
 #ct-settings > :not(#ct-char-list) {
     flex: 0 0 auto;
@@ -196,12 +195,11 @@
     font-size: 12px;
 }
 #ct-char-list {
-    flex: 1 1 0;
+    /* Keep rows at their natural height. Settings owns the only scrollbar,
+       so short panels cannot collapse the list behind fixed controls. */
+    flex: 0 0 auto;
     min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    overscroll-behavior: contain;
-    scrollbar-width: thin;
+    overflow: visible;
     padding-right: 3px;
 }
 #ct-profile-new {
@@ -481,26 +479,13 @@
     height: auto !important;
     padding: 9px !important;
 }
-#rpt-shell #ct-panel[data-rpt-docked] #ct-settings {
-    overflow: hidden;
-}
 #rpt-shell #ct-panel[data-rpt-docked] #ct-close,
 #rpt-shell #ct-panel[data-rpt-docked] #ct-resize { display: none !important; }
 #rpt-shell .rpt-collapsed #ct-panel[data-rpt-docked] #ct-body,
 #rpt-shell .rpt-collapsed #ct-panel[data-rpt-docked] #ct-settings { display: none !important; }
 
-/* Touch devices need one scrollable settings area: in a short dock the fixed
-   controls can otherwise consume all available height and collapse the list.
-   Use the primary pointer rather than width so landscape tablets are covered
-   while the desktop's fixed controls and scrolling list stay unchanged. */
-@media (pointer: coarse) {
-    #ct-settings,
-    #rpt-shell #ct-panel[data-rpt-docked] #ct-settings {
-        overflow-y: auto;
-        overscroll-behavior: contain;
-    }
-    #ct-char-list {
-        flex: 0 0 auto;
-        overflow: visible;
-    }
+/* One settings scroller on every input device, including tablets whose browser
+   reports a fine primary pointer. This applies to standalone and docked panels. */
+#ct-settings {
+    overscroll-behavior: contain;
 }
