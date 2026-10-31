@@ -4,6 +4,54 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 
+test('display name editing survives replies and reload, follows aliases, and can be reset', () => {
+    const { api, context, storage } = boot();
+    api.rememberCharacters(['Full Name']);
+    api.setAvatarAliases('first', 'Full Name', ['Alias']);
+    let edit;
+    const settings = {
+        style: { display: 'flex' },
+        querySelector: () => null,
+        querySelectorAll(selector) {
+            return selector === '.ct-char-rename'
+                ? [{ dataset: { name: 'Full Name' }, addEventListener(type, fn) { edit = fn; } }]
+                : [];
+        },
+    };
+    const body = { style: {}, querySelectorAll: () => [] };
+    api.document.querySelector = selector => selector === '#ct-settings' ? settings : selector === '#ct-body' ? body : null;
+    api.renderSettings(settings);
+    api.prompt = () => '  Short <Name>  ';
+    edit();
+    api.updateFromText('<char_thoughts>Alias: New thought</char_thoughts>');
+    assert.match(body.innerHTML, /class="ct-name">Short &lt;Name&gt;<\/div>/);
+    assert.deepEqual(Object.keys(api.getThoughts()), ['Alias']);
+    assert.equal(api.getThoughts().Alias.thought, 'New thought');
+    assert.equal(api.characterDisplayName(api.getActiveProfile(), 'Full Name'), 'Short <Name>');
+    context.characterId = 1;
+    assert.equal(api.characterDisplayName(api.getActiveProfile(), 'Alias'), 'Alias');
+    context.characterId = 0;
+    const reloaded = boot(Object.fromEntries([...storage].map(([k, v]) => [k, JSON.parse(v)])));
+    assert.equal(reloaded.api.characterDisplayName(reloaded.api.getActiveProfile(), 'Alias'), 'Short <Name>');
+    api.prompt = () => null;
+    edit();
+    assert.equal(api.getActiveProfile().displayNames['Full Name'], 'Short <Name>');
+    api.prompt = () => '   ';
+    edit();
+    assert.equal(api.characterDisplayName(api.getActiveProfile(), 'Alias'), 'Alias');
+    assert.equal(api.getActiveProfile().displayNames['Full Name'], undefined);
+});
+
+test('display names without avatars support normalized names and are cleared on character removal', () => {
+    const { api } = boot();
+    const profiles = api.getProfiles();
+    profiles.first.displayNames = { 'Full Name': 'Short' };
+    api.saveProfiles(profiles);
+    assert.equal(api.characterDisplayName(api.getActiveProfile(), ' FULL  NAME '), 'Short');
+    api.removeCharacter('Full Name', 'first');
+    assert.equal(api.characterDisplayName(api.getActiveProfile(), 'Full Name'), 'Full Name');
+});
+
 function boot(seed = {
     ct_profiles_v1: {
         first: { name: 'Medicine', folder: 'medicine', avatars: {}, uploads: {}, characters: [] },
@@ -292,3 +340,4 @@ test('folder avatar aliases work and removing an owner clears its names only in 
     context.characterId = 1;
     assert.equal(api.resolveAvatarSrc('Ло'), 'data:other');
 });
+

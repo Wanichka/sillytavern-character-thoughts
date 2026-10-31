@@ -1,4 +1,5 @@
-// Character Thoughts v1.3.9
+// Character Thoughts v1.3.10
+// Optional display names per avatar set; observed names and aliases stay intact.
 // Stable card bindings, persistent character rosters, and folder file inputs.
 // Shows each character's current thoughts (and mood) parsed from the
 // <char_thoughts> and <char_mood> info blocks in the latest assistant message.
@@ -152,10 +153,14 @@ function avatarOwner(profile, name) {
             return owner;
         }
     }
-    for (const owner of new Set([...Object.keys(profile.uploads || {}), ...Object.keys(profile.avatars || {})])) {
+    for (const owner of new Set([...Object.keys(profile.uploads || {}), ...Object.keys(profile.avatars || {}), ...Object.keys(profile.displayNames || {})])) {
         if (normalizeCharacterName(owner) === wanted) return owner;
     }
     return name;
+}
+
+function characterDisplayName(profile, name) {
+    return profile.displayNames?.[avatarOwner(profile, name)] || name;
 }
 
 function parseAliases(text, owner) {
@@ -364,6 +369,7 @@ function removeCharacter(name, profileId) {
     delete profile.avatars?.[name];
     delete profile.uploads?.[name];
     delete profile.aliases?.[name];
+    delete profile.displayNames?.[name];
     return saveProfiles(profiles);
 }
 
@@ -733,6 +739,7 @@ function installAvatarFallbacks(container, selector) {
 
 function renderThoughtsList(body) {
     const map = getThoughts();
+    const profile = getActiveProfile();
     const names = Object.keys(map);
 
     if (names.length === 0) {
@@ -761,7 +768,7 @@ function renderThoughtsList(body) {
             <div class="ct-card">
                 ${avatar}
                 <div class="ct-content">
-                    <div class="ct-name">${escapeHtml(name)}</div>
+                    <div class="ct-name">${escapeHtml(characterDisplayName(profile, name))}</div>
                     ${mood}
                     ${thought}
                 </div>
@@ -802,11 +809,12 @@ function renderSettings(container) {
             return `
                 <div class="ct-char-row">
                     ${preview}
-                    <span class="ct-char-name">${escapeHtml(name)}</span>
+                    <span class="ct-char-name" title="${escapeHtml(name)}">${escapeHtml(characterDisplayName(active, name))}</span>
                     <div class="ct-char-btns">
                         <button class="ct-char-upload" type="button" data-name="${escapeHtml(name)}">Upload</button>
                         <button class="ct-char-folder" type="button" data-name="${escapeHtml(name)}" title="Use an image from a folder" aria-label="Use an image from a folder for ${escapeHtml(name)}">📁</button>
                         <button class="ct-char-aliases" type="button" data-name="${escapeHtml(name)}" title="Other names for this avatar">Names${active.aliases?.[name]?.length ? ` (${active.aliases[name].length})` : ''}</button>
+                        <button class="ct-char-rename" type="button" data-name="${escapeHtml(name)}" title="Display name" aria-label="Change display name for ${escapeHtml(name)}">✎</button>
                         ${clearBtn}
                         <button class="ct-char-remove" type="button" data-name="${escapeHtml(name)}" title="Remove character from this profile">🗑</button>
                     </div>
@@ -829,7 +837,7 @@ function renderSettings(container) {
         <div class="ct-hint">Upload a picture, or use 📁 for a file in an existing folder. Cards using the same set share its avatars and character list.</div>
         <div class="ct-set-divider"></div>
         <div class="ct-set-label">Avatars by character</div>
-        <div class="ct-hint">Characters from thoughts and moods are saved automatically, even without a picture or after leaving the scene. Use <b>Names</b> to give one avatar several names.</div>
+        <div class="ct-hint">Characters from thoughts and moods are saved automatically, even without a picture or after leaving the scene. Use <b>Names</b> to give one avatar several names. Use <b>✎</b> to change the display name in this set.</div>
         ${(active.hiddenCharacters || []).length ? '<button id="ct-restore-characters" type="button" class="ct-char-clear">Restore removed characters</button>' : ''}
         <div id="ct-char-list">${charRows}</div>
     `;
@@ -942,6 +950,24 @@ function renderSettings(container) {
             // Explicitly choosing a folder image replaces this character's upload.
             delete all[activeId].uploads?.[name];
             if (!saveProfiles(all)) alert('Could not save changes. Browser storage may be full.');
+            renderPanel();
+        });
+    });
+    container.querySelectorAll('.ct-char-rename').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const owner = btn.dataset.name;
+            const input = prompt(`Display name for ${owner} (leave empty to use the original name):`, active.displayNames?.[owner] || '');
+            if (input === null) return;
+            const all = getProfiles();
+            if (!all[activeId]) return;
+            all[activeId].displayNames ||= {};
+            const label = input.trim();
+            if (label) all[activeId].displayNames[owner] = label;
+            else delete all[activeId].displayNames[owner];
+            if (!saveProfiles(all)) {
+                alert('Could not save the display name. Browser storage may be full.');
+                return;
+            }
             renderPanel();
         });
     });
@@ -1412,3 +1438,4 @@ function init() {
 }
 
 setTimeout(init, 1000);
+
