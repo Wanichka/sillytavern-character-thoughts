@@ -8,6 +8,8 @@ A SillyTavern UI extension that shows each character's current **thoughts** and 
 
 ## What it does
 
+- Use **✎** next to a character's **Names** button in settings to set a display name for the selected avatar set. All configured aliases use that label. Leave it empty to restore the name from the message. Stored thoughts and avatar assignments keep their original names.
+
 - Reads the `<char_thoughts>` / `<char_mood>` blocks the model writes each turn and lays them out as cards: an avatar, the character's name, a mood subtitle, and the thought rendered as an italic inner-voice quote.
 - Stores the captured state **per chat**, so every chat starts clean and reopening a chat shows its last state.
 - Lets you assign an avatar image per character, grouped into **profiles** (one profile per AU / card), so a brand-new card gets a fresh set and you never re-assign avatars when you start another chat in the same AU.
@@ -68,7 +70,7 @@ sillytavern-character-thoughts/
 - For a disk image, click **📁** beside the character. Enter the folder name and exact image filename when prompted. Folder spelling and case are preserved. The folder applies to the entire set; the filename applies to this character. Cancelling either prompt saves nothing. Choosing a file replaces this character's uploaded image. For a per-user installation at `SillyTavern/data/default-user/extensions/sillytavern-character-thoughts/`, enter `medicine-au` for its `medicine-au/` subfolder. The folder must already exist. The older `avatars/<folder>/<file>` layout is tried if the direct file fails to load. If both exist, the direct folder wins. Paths are relative to the loaded extension, supporting public and per-user installations.
 - Alternatively, **Upload** picks and crops an image. Uploaded images are saved in this browser, not written into the disk folder, and take priority over file mappings. The **✕** button clears the uploaded image so the folder file is used again.
 - Settings retain all characters found in thoughts/moods, including those in the history of a chat when you open it and those with previously saved avatars. The thoughts panel still shows the latest captured thoughts only.
-- **Names** beside a character lets one avatar respond to several names. For example, give `Трафальгар Ло` the names `Ло, Трафальгар, Trafalgar Law`. Matching ignores letter case and repeated spaces; the displayed thought name stays exactly as written by the model. Names apply only to the selected avatar set. If another character in that set already owns an avatar or name mapping, the extension refuses a conflicting name. Editing Names to an empty value clears the list. Removing the main character also removes its alternate names.
+- **Names** beside a character lets one avatar respond to several names. For example, give `Трафальгар Ло` the names `Ло, Трафальгар, Trafalgar Law`. Matching ignores letter case and repeated spaces; the displayed thought name follows the model unless you set a display name with **✎**. Names apply only to the selected avatar set. If another character in that set already owns an avatar or name mapping, the extension refuses a conflicting name. Editing Names to an empty value clears the list. Removing the main character also removes its alternate names and display name.
 - Characters are saved to the selected set as soon as their thoughts or moods are parsed, independently of avatar assignment. They stay saved after leaving the scene and after a browser reload. Opening a chat also saves names already visible in its current thoughts.
 - **🗑** beside a character removes them from this profile's settings and clears their avatar assignments without changing messages or disk files. History alone does not undo removal. Appearing in current thoughts saves the character again, even without an avatar. **Restore removed characters** brings back all removed names without restoring cleared avatars.
 - The entire settings area scrolls on all devices, including the avatar set controls and character list. The character list is the last section: there is no Panel size / Reset size footer. Short panels keep every row reachable without relying on tablet detection or a separate list scrollbar. This also applies inside the Roleplay Tools dock.
@@ -114,3 +116,4 @@ The optional browser regression `node tests/docked-scroll.cjs` requires Playwrig
 ## License
 
 MIT.
+

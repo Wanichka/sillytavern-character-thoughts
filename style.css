@@ -307,7 +307,7 @@
 
 .ct-char-row { flex-wrap: wrap; }
 .ct-char-name { flex: 1 1 80px; min-width: 0; }
-.ct-char-remove, .ct-char-folder, .ct-char-aliases {
+.ct-char-remove, .ct-char-folder, .ct-char-aliases, .ct-char-rename {
     border: none;
     border-radius: 8px;
     padding: 6px 8px;
@@ -488,3 +488,4 @@
 #ct-settings {
     overscroll-behavior: auto;
 }
+
