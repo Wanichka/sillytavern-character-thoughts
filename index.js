@@ -48,6 +48,15 @@ import { isRoleplayDocked, registerRoleplayPanel } from './roleplay-tools-adapte
 const THOUGHTS_KEY = 'ct_thoughts_v1';
 const PROFILES_KEY = 'ct_profiles_v1';
 const CARDMAP_KEY = 'ct_cardmap_v2';
+const SHARED_REV_KEY = 'ct_shared_rev';
+let sharedRevision = 0;
+
+// Character Stats reads profiles and the card map. A tiny revision key and an event
+// let it notice changes without re-reading every stored avatar.
+function notifySharedChange() {
+    try { sharedRevision = Math.max(Date.now(), sharedRevision + 1); localStorage.setItem(SHARED_REV_KEY, String(sharedRevision)); } catch { /* The event below still covers this page. */ }
+    try { window.dispatchEvent(new CustomEvent('wani-character-thoughts:changed')); } catch { /* No DOM (tests). */ }
+}
 const DEBUG = false;
 
 function log(...args) {
@@ -245,6 +254,7 @@ function getProfiles() {
 function saveProfiles(profiles) {
     try {
         localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles, null, 2));
+        notifySharedChange();
         return true;
     } catch (error) {
         console.error('[Character Thoughts] Failed to save profiles:', error);
@@ -265,6 +275,7 @@ function getCardMap() {
 function saveCardMap(map) {
     try {
         localStorage.setItem(CARDMAP_KEY, JSON.stringify(map));
+        notifySharedChange();
     } catch (error) {
         console.error('[Character Thoughts] Failed to save card map:', error);
     }
@@ -519,6 +530,7 @@ function setUploadedAvatar(name, dataUrl, id = getActiveProfileId()) {
 
     try {
         localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+        notifySharedChange();
         return true;
     } catch (error) {
         console.error('[Character Thoughts] Failed to save avatar (storage full?):', error);
@@ -1438,4 +1450,3 @@ function init() {
 }
 
 setTimeout(init, 1000);
-
